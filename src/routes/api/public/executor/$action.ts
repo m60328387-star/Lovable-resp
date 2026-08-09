@@ -37,23 +37,46 @@ const ResultInput = z.object({
     .optional(),
 });
 
+const ExecutorRow = z.object({
+  id: z.string(),
+  user_id: z.string(),
+  name: z.string().nullable().optional(),
+  workdir: z.string().nullable().optional(),
+});
+
+const QueuedRow = z.object({
+  id: z.string(),
+  project_id: z.string(),
+  input: z.record(z.string(), z.unknown()).nullable().optional(),
+});
+
+const RunRow = z.object({ id: z.string(), project_id: z.string(), user_id: z.string() });
+
+const ExistingFileRow = z.object({ id: z.string(), version: z.number(), content: z.string() });
+
+const FileRow = z.object({ path: z.string(), content: z.string() });
+
 export const Route = createFileRoute("/api/public/executor/$action")({
   server: {
     handlers: {
       POST: async ({ request, params }) => {
-        const token = (request.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
+        const token = (request.headers.get("Authorization") ?? "")
+          .replace(/^Bearer\s+/i, "")
+          .trim();
         if (!token || token.length < 20) return json({ error: "unauthorized" }, 401);
 
         const sql = getSql();
         const supabase = makeLocalSupabase(sql, "service");
 
-        const { data: executor } = await supabase
+        const { data: executorRow } = await supabase
           .from("executors")
           .select("id, user_id, name, workdir")
           .eq("token", token)
           .maybeSingle();
 
-        if (!executor) return json({ error: "unauthorized" }, 401);
+        const parsedExecutor = ExecutorRow.safeParse(executorRow);
+        if (!parsedExecutor.success) return json({ error: "unauthorized" }, 401);
+        const executor = parsedExecutor.data;
 
         const body = await request.json().catch(() => ({}));
         const now = new Date().toISOString();
@@ -70,8 +93,11 @@ export const Route = createFileRoute("/api/public/executor/$action")({
                 ? { meta: JSON.parse(JSON.stringify(parsed.data.meta)) }
                 : {}),
             })
-            .eq("id", (executor as any).id);
-          return json({ ok: true, executor: { id: (executor as any).id, name: executor.name, workdir: executor.workdir } });
+            .eq("id", executor.id);
+          return json({
+            ok: true,
+            executor: { id: executor.id, name: executor.name, workdir: executor.workdir },
+          });
         }
 
         // ---- poll ------------------------------------------------------
@@ -79,9 +105,9 @@ export const Route = createFileRoute("/api/public/executor/$action")({
           await supabase
             .from("executors")
             .update({ status: "online", last_seen_at: now })
-            .eq("id", (executor as any).id);
+            .eq("id", executor.id);
 
-          const { data: queued } = await supabase
+          const { data: queuedRow } = await supabase
             .from("runs")
             .select("id, project_id, input")
             .eq("user_id", executor.user_id)
@@ -91,13 +117,15 @@ export const Route = createFileRoute("/api/public/executor/$action")({
             .limit(1)
             .maybeSingle();
 
-          if (!queued) return json({ ok: true, run: null });
+          const parsedQueued = QueuedRow.safeParse(queuedRow);
+          if (!parsedQueued.success) return json({ ok: true, run: null });
+          const queued = parsedQueued.data;
 
           // التقاط ذرّي: لا يلتقط الأمر منفّذان في آن واحد.
           const { data: claimed } = await supabase
             .from("runs")
-            .update({ status: "running", executor_id: (executor as any).id, claimed_at: now })
-            .eq("id", (queued as any).id)
+            .update({ status: "running", executor_id: executor.id, claimed_at: now })
+            .eq("id", queued.id)
             .in("status", ["queued", "no_executor"])
             .select("id")
             .maybeSingle();
@@ -107,66 +135,73 @@ export const Route = createFileRoute("/api/public/executor/$action")({
           const { data: files } = await supabase
             .from("files")
             .select("path, content")
-            .eq("project_id", (queued as any).project_id)
+            .eq("project_id", queued.project_id)
             .order("path", { ascending: true });
 
-          const input = ((queued as any).input ?? {}) as { command?: string; reason?: string };
+          const input =
+            z
+              .object({ command: z.string().optional(), reason: z.string().optional() })
+              .safeParse(queued.input ?? {}).data ?? {};
           return json({
             ok: true,
             run: {
-              id: (queued as any).id,
-              projectId: (queued as any).project_id,
+              id: queued.id,
+              projectId: queued.project_id,
               command: input.command ?? "",
               reason: input.reason ?? "",
             },
-            files: (files as any[]) ?? [],
+            files: FileRow.array().safeParse(files ?? []).data ?? [],
           });
         }
 
         // ---- result ----------------------------------------------------
         if (params.action === "result") {
           const parsed = ResultInput.safeParse(body);
-          if (!parsed.success) return json({ error: "invalid_input", details: parsed.error.issues }, 400);
+          if (!parsed.success)
+            return json({ error: "invalid_input", details: parsed.error.issues }, 400);
           const { runId, output, exitCode, files } = parsed.data;
 
-          const { data: run } = await supabase
+          const { data: runRow } = await supabase
             .from("runs")
             .select("id, project_id, user_id")
             .eq("id", runId)
-            .eq("executor_id", (executor as any).id)
+            .eq("executor_id", executor.id)
             .maybeSingle();
 
-          if (!run) return json({ error: "run_not_found" }, 404);
+          const parsedRun = RunRow.safeParse(runRow);
+          if (!parsedRun.success) return json({ error: "run_not_found" }, 404);
+          const run = parsedRun.data;
 
           let written = 0;
           for (const f of files ?? []) {
             const path = f.path.replace(/^\/+/, "");
             if (path.includes("..")) continue;
 
-            const { data: existing } = await supabase
+            const { data: existingRow } = await supabase
               .from("files")
               .select("id, version, content")
-              .eq("project_id", (run as any).project_id)
+              .eq("project_id", run.project_id)
               .eq("path", path)
               .maybeSingle();
 
+            const existing = ExistingFileRow.safeParse(existingRow).data;
             if (existing) {
-              if ((existing as any).content === f.content) continue;
+              if (existing.content === f.content) continue;
               await supabase.from("file_versions").insert({
-                project_id: (run as any).project_id,
-                user_id: (run as any).user_id,
+                project_id: run.project_id,
+                user_id: run.user_id,
                 path,
-                content: (existing as any).content,
-                version: (existing as any).version,
+                content: existing.content,
+                version: existing.version,
               });
               await supabase
                 .from("files")
-                .update({ content: f.content, version: (existing as any).version + 1 })
-                .eq("id", (existing as any).id);
+                .update({ content: f.content, version: existing.version + 1 })
+                .eq("id", existing.id);
             } else {
               await supabase.from("files").insert({
-                project_id: (run as any).project_id,
-                user_id: (run as any).user_id,
+                project_id: run.project_id,
+                user_id: run.user_id,
                 path,
                 content: f.content,
               });

@@ -45,7 +45,9 @@ export function BackgroundJobs({
   return (
     <div className="rounded-xl border bg-card/60 p-3 text-sm">
       <div className="flex items-center gap-2">
-        <Icon className={`size-4 ${meta.tone} ${current.status === "running" ? "animate-spin" : ""}`} />
+        <Icon
+          className={`size-4 ${meta.tone} ${current.status === "running" ? "animate-spin" : ""}`}
+        />
         <span className="font-medium">عامل الخلفية — {meta.label}</span>
         <Badge variant="secondary">{current.phase}</Badge>
         <span className="text-xs text-muted-foreground">
@@ -65,9 +67,7 @@ export function BackgroundJobs({
           </Button>
         )}
       </div>
-      {current.error && (
-        <p className="mt-2 text-xs text-destructive">{current.error}</p>
-      )}
+      {current.error && <p className="mt-2 text-xs text-destructive">{current.error}</p>}
       {events.length > 0 && (
         <ul className="mt-2 max-h-40 space-y-1 overflow-auto text-xs text-muted-foreground">
           {events.map((e, i) => (

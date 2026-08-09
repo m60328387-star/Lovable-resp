@@ -180,7 +180,10 @@ sudo systemctl status weaver-agent --no-pager`;
             {openId === ex.id && (
               <div className="mt-3 space-y-3">
                 <CopyBox label="رمز الاتصال السري (لا تشاركه)" text={ex.token} />
-                <CopyBox label="نفّذ هذه الأوامر على خادم Contabo عبر SSH" text={install(ex.token, ex.workdir)} />
+                <CopyBox
+                  label="نفّذ هذه الأوامر على خادم Contabo عبر SSH"
+                  text={install(ex.token, ex.workdir)}
+                />
               </div>
             )}
           </div>
@@ -202,7 +205,8 @@ sudo systemctl status weaver-agent --no-pager`;
                       r.status === "success" && "bg-primary/15 text-primary",
                       r.status === "failed" && "bg-destructive/15 text-destructive",
                       r.status === "running" && "bg-amber-500/15 text-amber-600",
-                      (r.status === "queued" || r.status === "no_executor") && "bg-muted text-muted-foreground",
+                      (r.status === "queued" || r.status === "no_executor") &&
+                        "bg-muted text-muted-foreground",
                     )}
                   >
                     {r.status}

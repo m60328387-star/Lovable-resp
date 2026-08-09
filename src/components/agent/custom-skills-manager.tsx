@@ -47,7 +47,12 @@ export function CustomSkillsManager() {
   });
 
   const edit = (skill: CustomSkill) => {
-    setDraft({ id: skill.id, name: skill.name, description: skill.description, prompt: skill.prompt });
+    setDraft({
+      id: skill.id,
+      name: skill.name,
+      description: skill.description,
+      prompt: skill.prompt,
+    });
     setOpen(true);
     setError(null);
   };
@@ -121,7 +126,9 @@ export function CustomSkillsManager() {
           <div className="flex gap-2">
             <button
               type="button"
-              disabled={save.isPending || draft.name.trim().length < 2 || draft.prompt.trim().length < 10}
+              disabled={
+                save.isPending || draft.name.trim().length < 2 || draft.prompt.trim().length < 10
+              }
               onClick={() => save.mutate()}
               className={cn(
                 "inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 text-[13px] font-semibold text-primary-foreground",

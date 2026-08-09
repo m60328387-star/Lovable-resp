@@ -117,7 +117,9 @@ export const testConnector = createServerFn({ method: "POST" })
         { timeoutMs: 20_000 },
       )) as Record<string, unknown>;
       const bodyText =
-        typeof raw["body"] === "string" ? (raw["body"] as string) : JSON.stringify(raw["body"] ?? raw, null, 2);
+        typeof raw["body"] === "string"
+          ? (raw["body"] as string)
+          : JSON.stringify(raw["body"] ?? raw, null, 2);
       result = {
         ok: Boolean(raw["ok"]),
         status: (raw["status"] as number | undefined) ?? null,
@@ -129,7 +131,11 @@ export const testConnector = createServerFn({ method: "POST" })
       };
     } catch (error) {
       const message =
-        error instanceof SandboxError ? error.message : error instanceof Error ? error.message : String(error);
+        error instanceof SandboxError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : String(error);
       result = {
         ok: false,
         status: null,

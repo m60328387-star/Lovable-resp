@@ -50,7 +50,7 @@ import { formatUsd } from "@/lib/pricing";
 
 import { clearTerminal, useTerminalEvents, type TerminalEvent } from "@/lib/terminal-bus";
 import { cn } from "@/lib/utils";
-
+import { RuntimePanel } from "@/components/agent/runtime-panel";
 
 type PreviewDevice = "desktop" | "tablet" | "mobile";
 
@@ -71,6 +71,7 @@ type Tab =
   | "tasks"
   | "files"
   | "preview"
+  | "runtime"
   | "terminal"
   | "runs"
   | "checkpoints"
@@ -83,6 +84,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "tasks", label: "المهام" },
   { id: "files", label: "الملفات" },
   { id: "preview", label: "المعاينة" },
+  { id: "runtime", label: "بيئة التنفيذ" },
   { id: "terminal", label: "الطرفية" },
   { id: "runs", label: "السجل" },
   { id: "checkpoints", label: "الاسترجاع" },
@@ -90,8 +92,6 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "visitors", label: "الزوار" },
   { id: "secrets", label: "المفاتيح" },
 ];
-
-
 
 const STATUS_STYLE: Record<string, { icon: typeof CheckCircle2; className: string }> = {
   done: { icon: CheckCircle2, className: "text-primary" },
@@ -174,7 +174,6 @@ export function ProjectPanel({
     autoOpened.current = true;
     setTab("preview");
   }, [previewDoc]);
-
 
   const restore = async (versionId: string) => {
     if (!historyFor) return;
@@ -329,8 +328,8 @@ export function ProjectPanel({
     files: files.length,
     runs: runs.length,
     terminal: terminalEvents.length,
+    runtime: 0,
     checkpoints: checkpoints.data?.length ?? 0,
-
 
     usage: 0,
     visitors: analytics.data?.total ?? 0,
@@ -637,11 +636,11 @@ export function ProjectPanel({
                 </>
               )}
             </div>
-
           ))}
 
         {tab === "terminal" && <TerminalView events={terminalEvents} />}
 
+        {tab === "runtime" && <RuntimePanel projectId={projectId} />}
 
         {tab === "runs" &&
           (runs.length === 0 ? (
@@ -689,7 +688,6 @@ export function ProjectPanel({
         )}
 
         {tab === "usage" && <UsageView data={usage.data} loading={usage.isLoading} />}
-
 
         {tab === "visitors" && (
           <VisitorsView data={analytics.data} loading={analytics.isLoading} liveUrl={liveUrl} />
@@ -941,7 +939,6 @@ function CheckpointsView({
 }
 
 function UsageView({ data, loading }: { data: UsageData | undefined; loading: boolean }) {
-
   if (loading) return <Empty label="يحسب الاستهلاك…" />;
   if (!data || data.project.calls === 0)
     return <Empty label="لا يوجد استهلاك مسجّل لهذا المشروع بعد." />;

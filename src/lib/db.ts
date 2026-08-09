@@ -14,9 +14,7 @@ let sqlInstance: postgres.Sql | null = null;
 export function getSql(): postgres.Sql {
   const url = getPostgresUrl();
   if (!url) {
-    throw new Error(
-      "DATABASE_URL is not configured. Set it in deploy/.env on the VPS.",
-    );
+    throw new Error("DATABASE_URL is not configured. Set it in deploy/.env on the VPS.");
   }
   if (!sqlInstance) {
     sqlInstance = postgres(url, {

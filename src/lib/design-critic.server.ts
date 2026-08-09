@@ -58,7 +58,11 @@ export async function reviewScreenshot(
       maxTokens: 1400,
       openRouterModel: model,
     });
-    return { ok: Boolean(result.text), model: `${result.provider}:${result.model}`, review: result.text };
+    return {
+      ok: Boolean(result.text),
+      model: `${result.provider}:${result.model}`,
+      review: result.text,
+    };
   } catch (error) {
     return { ok: false, model, review: "", error: String(error).slice(0, 300) };
   }

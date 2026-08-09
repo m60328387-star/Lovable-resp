@@ -47,8 +47,8 @@ import { BackgroundJobs } from "@/components/agent/background-jobs";
 import { enqueueAgentJob } from "@/lib/agent-jobs.functions";
 import { toolDetail, toolFailed, toolLabel } from "@/lib/tool-display";
 import { pushTerminalEvent } from "@/lib/terminal-bus";
+import { ResizeHandle, useResizablePanel } from "@/components/agent/split-pane";
 import { cn } from "@/lib/utils";
-
 
 type Attachment = { filename: string; mediaType: string; url: string };
 
@@ -63,8 +63,41 @@ function readAsDataUrl(file: File): Promise<string> {
   });
 }
 
-
 type AnyPart = { type: string; [key: string]: unknown };
+
+/** يصف ما يفعله الوكيل الآن اعتماداً على آخر جزء وصل من التدفّق. */
+function currentActivity(message?: { parts?: AnyPart[] }): string {
+  const parts = (message?.parts ?? []) as AnyPart[];
+  for (let i = parts.length - 1; i >= 0; i -= 1) {
+    const part = parts[i]!;
+    if (part.type?.startsWith("tool-")) {
+      const name = part.type.slice(5);
+      const done = part["state"] === "output-available" || part["state"] === "output-error";
+      return `${done ? "أنهى" : "ينفّذ"}: ${toolLabel(name)}`;
+    }
+    if (part.type === "reasoning") return "يفكّر في الخطوة التالية…";
+    if (part.type === "text") return "يكتب الردّ…";
+  }
+  return "يعمل على المهمة…";
+}
+
+/** مؤشر حيّ مع عدّاد زمني — يمنع الإحساس بالصمت أثناء الخطوات الطويلة. */
+function LiveActivity({ label }: { label: string }) {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setSeconds((s) => s + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div className="flex items-center gap-2 rounded-lg border bg-surface/60 px-3 py-2 text-[13px] text-muted-foreground">
+      <Loader2 className="size-4 animate-spin text-primary" />
+      <span>{label}</span>
+      <span className="ms-auto font-mono text-[11px] tabular-nums">
+        {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
+      </span>
+    </div>
+  );
+}
 
 function titleFrom(text: string) {
   const clean = text.replace(/\s+/g, " ").trim();
@@ -124,8 +157,6 @@ function MessageParts({ message }: { message: UIMessage }) {
       });
     });
   }, [message.id, parts]);
-
-
 
   return (
     <div className="space-y-3">
@@ -215,7 +246,6 @@ function MessageParts({ message }: { message: UIMessage }) {
           );
         }
         return null;
-
       })}
     </div>
   );
@@ -248,9 +278,9 @@ function WorkspaceChip({
   );
 }
 function UserAttachments({ message }: { message: UIMessage }) {
-  const files = ((Array.isArray(message.parts) ? message.parts : []) as unknown as AnyPart[]).filter(
-    (p) => p.type === "file",
-  );
+  const files = (
+    (Array.isArray(message.parts) ? message.parts : []) as unknown as AnyPart[]
+  ).filter((p) => p.type === "file");
   if (files.length === 0) return null;
   return (
     <div className="flex flex-wrap justify-end gap-2">
@@ -278,7 +308,6 @@ function UserAttachments({ message }: { message: UIMessage }) {
     </div>
   );
 }
-
 
 function ToolPending({ label }: { label: string }) {
   return (
@@ -320,11 +349,9 @@ export function ChatWindow({
       key={threadId}
       threadId={threadId}
       initialPrompt={initialPrompt}
-      loadedMessages={
-        ((conversation.data?.messages ?? []) as unknown as UIMessage[]).filter(
-          (m) => m && Array.isArray(m.parts),
-        )
-      }
+      loadedMessages={((conversation.data?.messages ?? []) as unknown as UIMessage[]).filter(
+        (m) => m && Array.isArray(m.parts),
+      )}
     />
   );
 }
@@ -376,6 +403,15 @@ function ChatSurface({
   }, []);
 
   const [panelKey, setPanelKey] = useState(0);
+  const [mobilePanel, setMobilePanel] = useState(false);
+  const {
+    width: panelWidth,
+    collapsed: panelCollapsed,
+    dragging,
+    toggle: togglePanel,
+    onPointerDown,
+    nudge,
+  } = useResizablePanel("weaver-project-panel-width", 380);
   const draftKey = `weaver-draft-${threadId}`;
   const [input, setInput] = useState("");
 
@@ -402,7 +438,6 @@ function ChatSurface({
   const [pendingContinue, setPendingContinue] = useState(false);
   const autoRunsRef = useRef(0);
   const nextActionRef = useRef<string | null>(null);
-
 
   const persist = useCallback(
     async (all: UIMessage[]) => {
@@ -461,15 +496,21 @@ function ChatSurface({
       void persist(all);
       void persistToolOutputs(message).then(() => setPanelKey((k) => k + 1));
       const meta = message.metadata as
-        | { truncated?: boolean; incomplete?: boolean; complete?: boolean; nextAction?: string | null }
+        | {
+            truncated?: boolean;
+            incomplete?: boolean;
+            complete?: boolean;
+            nextAction?: string | null;
+          }
         | undefined;
       nextActionRef.current = meta?.nextAction ?? null;
       const assistantText = ((message.parts ?? []) as AnyPart[])
         .map((part) => (part.type === "text" ? String(part["text"] ?? "") : ""))
         .join(" ");
-      const stalledByWords = /(?:اكتب\s+[«\"]?أكمل|أحتاج\s+(?:إلى\s+)?مراجعة|بانتظار\s+(?:المراجعة|الموافقة)|سأكمل\s+لاحق)/i.test(
-        assistantText,
-      );
+      const stalledByWords =
+        /(?:اكتب\s+[«"]?أكمل|أحتاج\s+(?:إلى\s+)?مراجعة|بانتظار\s+(?:المراجعة|الموافقة)|سأكمل\s+لاحق)/i.test(
+          assistantText,
+        );
       if (meta?.complete) {
         autoRunsRef.current = 0;
         setPendingContinue(false);
@@ -479,7 +520,6 @@ function ChatSurface({
       if (meta?.truncated || meta?.incomplete || stalledByWords) setPendingContinue(true);
       else autoRunsRef.current = 0;
     },
-
 
     onError: (error) => {
       void persist(messagesRef.current);
@@ -593,7 +633,19 @@ function ChatSurface({
       setAttachments([]);
       if (typeof window !== "undefined") window.localStorage.removeItem(`weaver-draft-${threadId}`);
     },
-    [attachments, background, isBusy, messages.length, mode, model, queryClient, sendMessage, skills, submitBackground, threadId],
+    [
+      attachments,
+      background,
+      isBusy,
+      messages.length,
+      mode,
+      model,
+      queryClient,
+      sendMessage,
+      skills,
+      submitBackground,
+      threadId,
+    ],
   );
 
   // استئناف تلقائي بعد توقّف الجولة على حد الخطوات/الوقت
@@ -620,7 +672,6 @@ function ChatSurface({
     return () => window.clearTimeout(timer);
   }, [autoContinue, isBusy, pendingContinue, submit]);
 
-
   useEffect(() => {
     if (sentInitial.current) return;
     if (!initialPrompt) return;
@@ -629,12 +680,11 @@ function ChatSurface({
     submit(initialPrompt);
   }, [initialPrompt, initialMessages.length, submit]);
 
-
   return (
     <div className="flex h-full min-h-0">
       <div className="flex h-full min-h-0 flex-1 flex-col">
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 sm:px-6">
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+          <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 sm:px-6 xl:max-w-4xl 2xl:max-w-5xl">
             {messages.length === 0 && (
               <p className="rounded-xl border border-dashed bg-surface/60 px-4 py-6 text-center text-sm text-muted-foreground">
                 اكتب طلبك، وسيبدأ الوكيل من الاستقبال حتى المراقبة.
@@ -658,7 +708,6 @@ function ChatSurface({
                     )}
                   </div>
                 ) : (
-
                   <div className="w-full">
                     <div className="mb-2 flex items-center gap-2">
                       <span className="grid size-6 place-items-center rounded-md bg-primary/10 font-mono text-[10px] font-bold text-primary">
@@ -674,45 +723,50 @@ function ChatSurface({
               </div>
             ))}
             <BackgroundJobs projectId={threadId} onActivity={setBgActive} />
-            {status === "submitted" && (
-              <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
-                <Loader2 className="size-4 animate-spin text-primary" />
-                يستقبل الطلب ويحلّل المتطلبات…
-              </div>
-            )}
-            {!isBusy && messages.length > 0 && messages[messages.length - 1]?.role === "assistant" && (
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    autoRunsRef.current = 0;
-                    submit("أكمل من حيث توقفت بالضبط، دون إعادة ما أنجزته.");
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-lg border bg-card px-3 py-1.5 text-[12px] font-semibold hover:bg-surface"
-                >
-                  أكمل البناء
-                </button>
-                <label className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    checked={autoContinue}
-                    onChange={(e) => setAutoContinue(e.target.checked)}
-                    className="size-3.5 accent-primary"
-                  />
-                  متابعة تلقائية عند بلوغ حد الخطوات
-                </label>
-                <label className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    checked={background}
-                    onChange={(e) => setBackground(e.target.checked)}
-                    className="size-3.5 accent-primary"
-                  />
-                  تشغيل في الخلفية على الخادم
-                </label>
-              </div>
+            {(status === "submitted" || status === "streaming") && (
+              <LiveActivity
+                label={
+                  status === "submitted"
+                    ? "يستقبل الطلب ويحلّل المتطلبات…"
+                    : currentActivity(messages[messages.length - 1])
+                }
+              />
             )}
 
+            {!isBusy &&
+              messages.length > 0 &&
+              messages[messages.length - 1]?.role === "assistant" && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      autoRunsRef.current = 0;
+                      submit("أكمل من حيث توقفت بالضبط، دون إعادة ما أنجزته.");
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg border bg-card px-3 py-1.5 text-[12px] font-semibold hover:bg-surface"
+                  >
+                    أكمل البناء
+                  </button>
+                  <label className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={autoContinue}
+                      onChange={(e) => setAutoContinue(e.target.checked)}
+                      className="size-3.5 accent-primary"
+                    />
+                    متابعة تلقائية عند بلوغ حد الخطوات
+                  </label>
+                  <label className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={background}
+                      onChange={(e) => setBackground(e.target.checked)}
+                      className="size-3.5 accent-primary"
+                    />
+                    تشغيل في الخلفية على الخادم
+                  </label>
+                </div>
+              )}
 
             <div ref={bottomRef} />
           </div>
@@ -724,7 +778,7 @@ function ChatSurface({
               e.preventDefault();
               submit(input);
             }}
-            className="mx-auto w-full max-w-3xl px-4 py-3 sm:px-6"
+            className="mx-auto w-full max-w-3xl px-4 py-3 sm:px-6 xl:max-w-4xl 2xl:max-w-5xl"
           >
             {attachments.length > 0 && (
               <div className="mb-2 flex flex-wrap gap-2">
@@ -793,7 +847,7 @@ function ChatSurface({
                 }}
                 rows={1}
                 placeholder="صف ما تريد بناءه… (يمكنك إرفاق صور أو PDF)"
-                className="max-h-40 min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-[14px] outline-none placeholder:text-muted-foreground"
+                className="max-h-[45vh] min-h-10 flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 text-[14px] outline-none placeholder:text-muted-foreground"
               />
               {isBusy ? (
                 <button
@@ -829,8 +883,6 @@ function ChatSurface({
                 خلفية دائمة
               </label>
 
-
-
               <p className="flex-1 text-center text-[11px] text-muted-foreground">
                 المحادثات والمواصفات ورسوم المهام محفوظة في حسابك.
               </p>
@@ -838,10 +890,50 @@ function ChatSurface({
           </form>
         </div>
       </div>
-      <aside className="hidden w-[360px] shrink-0 lg:block">
-        <ProjectPanel projectId={threadId} refreshKey={panelKey} live={isBusy} />
-
+      <ResizeHandle onPointerDown={onPointerDown} nudge={nudge} dragging={dragging} />
+      <aside
+        className={cn(
+          "shrink-0 overflow-hidden border-s bg-background",
+          panelCollapsed ? "hidden" : "hidden lg:block",
+          mobilePanel && "fixed inset-0 z-40 block w-full border-s-0 lg:static lg:z-auto",
+        )}
+        style={panelCollapsed || mobilePanel ? undefined : { width: panelWidth }}
+      >
+        <div className="flex h-full min-h-0 flex-col">
+          <div className="flex items-center gap-2 border-b px-3 py-2 lg:hidden">
+            <span className="text-[12px] font-semibold">لوحة المشروع</span>
+            <button
+              type="button"
+              onClick={() => setMobilePanel(false)}
+              className="ms-auto rounded-lg border px-2 py-1 text-[11px]"
+            >
+              إغلاق
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <ProjectPanel projectId={threadId} refreshKey={panelKey} live={isBusy} />
+          </div>
+        </div>
       </aside>
+
+      <div className="pointer-events-none fixed bottom-24 start-3 z-30 flex flex-col gap-2">
+        <button
+          type="button"
+          onClick={togglePanel}
+          className="pointer-events-auto hidden rounded-full border bg-card px-3 py-1.5 text-[11px] font-semibold shadow-soft lg:inline-flex"
+        >
+          {panelCollapsed ? "إظهار لوحة المشروع" : "إخفاء لوحة المشروع"}
+        </button>
+        {!mobilePanel && (
+          <button
+            type="button"
+            onClick={() => setMobilePanel(true)}
+            className="pointer-events-auto rounded-full border bg-card px-3 py-1.5 text-[11px] font-semibold shadow-soft lg:hidden"
+          >
+            لوحة المشروع
+          </button>
+        )}
+      </div>
     </div>
   );
 }

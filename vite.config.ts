@@ -19,7 +19,4 @@ export default defineConfig({
   },
   // Only override the preset when building for the VPS. Keep the Lovable default for dev/Cloudflare.
   ...(isNodeBuild ? { nitro: { preset: "node" } } : {}),
-
 });
-
-

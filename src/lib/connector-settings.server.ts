@@ -11,7 +11,9 @@ export type ConnectorSetting = {
   last_test_ms: number | null;
 };
 
-export async function readConnectorSettings(userId: string): Promise<Record<string, ConnectorSetting>> {
+export async function readConnectorSettings(
+  userId: string,
+): Promise<Record<string, ConnectorSetting>> {
   try {
     const { getSql } = await import("@/lib/db");
     const sql = getSql();

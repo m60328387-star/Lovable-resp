@@ -77,7 +77,10 @@ class LocalChain implements PromiseLike<ChainResponse> {
     }
     return this.clone(patch);
   }
-  insert(rows: Record<string, unknown> | Record<string, unknown>[], options?: { onConflict?: string }) {
+  insert(
+    rows: Record<string, unknown> | Record<string, unknown>[],
+    options?: { onConflict?: string },
+  ) {
     const arr = Array.isArray(rows) ? rows : [rows];
     const patch: Partial<ChainState> = { method: "insert", values: arr };
     if (options?.onConflict) patch.onConflict = options.onConflict;
@@ -89,7 +92,10 @@ class LocalChain implements PromiseLike<ChainResponse> {
   delete() {
     return this.clone({ method: "delete" });
   }
-  upsert(rows: Record<string, unknown> | Record<string, unknown>[], options: { onConflict: string }) {
+  upsert(
+    rows: Record<string, unknown> | Record<string, unknown>[],
+    options: { onConflict: string },
+  ) {
     return this.clone({
       method: "upsert",
       values: Array.isArray(rows) ? rows : [rows],
@@ -207,11 +213,25 @@ class LocalChain implements PromiseLike<ChainResponse> {
     }
 
     if (s.method === "insert" && s.values) {
-      return await insertInto(this.sql, s.table, s.values, s.onConflict, s.returning, s.returningColumns);
+      return await insertInto(
+        this.sql,
+        s.table,
+        s.values,
+        s.onConflict,
+        s.returning,
+        s.returningColumns,
+      );
     }
 
     if (s.method === "update" && s.updateValues) {
-      return await updateTable(this.sql, s.table, s.updateValues, s.where, s.returning, s.returningColumns);
+      return await updateTable(
+        this.sql,
+        s.table,
+        s.updateValues,
+        s.where,
+        s.returning,
+        s.returningColumns,
+      );
     }
 
     if (s.method === "delete") {
@@ -221,7 +241,14 @@ class LocalChain implements PromiseLike<ChainResponse> {
     }
 
     if (s.method === "upsert" && s.values && s.onConflict) {
-      return await upsertInto(this.sql, s.table, s.values, s.onConflict, s.returning, s.returningColumns);
+      return await upsertInto(
+        this.sql,
+        s.table,
+        s.values,
+        s.onConflict,
+        s.returning,
+        s.returningColumns,
+      );
     }
 
     return null;
@@ -316,7 +343,10 @@ async function insertInto(
   const colsFrag = cols.map(qid).join(", ");
   let query = `INSERT INTO ${qid(table)} (${colsFrag}) VALUES ${values}`;
   if (onConflict) {
-    const conflictCols = onConflict.split(",").map((c) => c.trim()).filter(Boolean);
+    const conflictCols = onConflict
+      .split(",")
+      .map((c) => c.trim())
+      .filter(Boolean);
     const setCols = cols.filter((c) => !conflictCols.includes(c));
     if (setCols.length > 0) {
       const setFrag = setCols.map((c) => `${qid(c)} = EXCLUDED.${qid(c)}`).join(", ");

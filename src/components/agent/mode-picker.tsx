@@ -1,4 +1,4 @@
-import { Hammer, MessagesSquare, Search, Send } from "lucide-react";
+import { Hammer, MessagesSquare, Search, Send, Wrench } from "lucide-react";
 import { MODES, useMode, type ModeId } from "@/lib/modes";
 import { cn } from "@/lib/utils";
 
@@ -7,6 +7,7 @@ const ICONS: Record<ModeId, typeof Hammer> = {
   research: Search,
   advise: MessagesSquare,
   bot: Send,
+  platform: Wrench,
 };
 
 /** مبدّل أوضاع التشغيل: بناء / بحث / استشارة / بوت. */

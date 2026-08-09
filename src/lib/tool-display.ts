@@ -4,6 +4,8 @@ export const TOOL_LABELS: Record<string, string> = {
   build_task_graph: "بناء رسم المهام",
   update_task: "تحديث مهمة",
   write_file: "كتابة ملف",
+  write_files: "كتابة دفعة ملفات",
+
   edit_file: "تعديل جراحي",
   append_file: "إلحاق بملف",
   delete_file: "حذف ملف",
@@ -16,6 +18,7 @@ export const TOOL_LABELS: Record<string, string> = {
   visual_audit: "تدقيق بصري",
   design_review: "مراجعة التصميم",
   capture_reference: "التقاط مرجع",
+  brand_kit: "توليد الهوية البصرية",
   seo_kit: "تحسين محركات البحث",
   promote_build: "ترقية البناء",
   publish_site: "نشر الموقع",

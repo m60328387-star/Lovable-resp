@@ -139,9 +139,27 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
       "طوّر موقع شركة عربي متعدد الصفحات انطلاقًا من القالب: أكمل صفحات من نحن والخدمات والتواصل بمحتوى واقعي وتصميم موحّد، ثم شغّل run_checks وانشر.",
     files: [
       ...baseFiles(LANDING_BODY),
-      { path: "about.html", content: page("من نحن", `${HEADER}<main class="section container"><h1 class="section-title">من نحن</h1><p class="section-sub">قصة الشركة ورسالتها.</p></main>${FOOTER}`) },
-      { path: "services.html", content: page("خدماتنا", `${HEADER}<main class="section container"><h1 class="section-title">خدماتنا</h1><div class="grid"><article class="card"><h3>خدمة أولى</h3><p>وصف.</p></article><article class="card"><h3>خدمة ثانية</h3><p>وصف.</p></article></div></main>${FOOTER}`) },
-      { path: "contact.html", content: page("تواصل معنا", `${HEADER}<main class="section container"><h1 class="section-title">تواصل معنا</h1><form class="card"><label for="email">بريدك</label><input id="email" type="email" required style="width:100%;padding:12px;margin:10px 0;border:1px solid var(--border);border-radius:12px"><button class="btn" type="submit">إرسال</button></form></main>${FOOTER}`) },
+      {
+        path: "about.html",
+        content: page(
+          "من نحن",
+          `${HEADER}<main class="section container"><h1 class="section-title">من نحن</h1><p class="section-sub">قصة الشركة ورسالتها.</p></main>${FOOTER}`,
+        ),
+      },
+      {
+        path: "services.html",
+        content: page(
+          "خدماتنا",
+          `${HEADER}<main class="section container"><h1 class="section-title">خدماتنا</h1><div class="grid"><article class="card"><h3>خدمة أولى</h3><p>وصف.</p></article><article class="card"><h3>خدمة ثانية</h3><p>وصف.</p></article></div></main>${FOOTER}`,
+        ),
+      },
+      {
+        path: "contact.html",
+        content: page(
+          "تواصل معنا",
+          `${HEADER}<main class="section container"><h1 class="section-title">تواصل معنا</h1><form class="card"><label for="email">بريدك</label><input id="email" type="email" required style="width:100%;padding:12px;margin:10px 0;border:1px solid var(--border);border-radius:12px"><button class="btn" type="submit">إرسال</button></form></main>${FOOTER}`,
+        ),
+      },
     ],
   },
   {
@@ -150,7 +168,9 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
     description: "بروفايل، مشاريع، مهارات، وتواصل.",
     prompt:
       "طوّر موقع ملف أعمال شخصي عربي انطلاقًا من القالب: أضف قسم المشاريع بشبكة بطاقات، وقسم المهارات والسيرة، ثم شغّل run_checks وانشر.",
-    files: baseFiles(`${HEADER}<main><section class="container hero"><div><h1>مرحبًا، أنا…</h1><p>مطوّر/مصمّم أبني منتجات رقمية.</p><div class="hero-actions"><a class="btn" href="#work">أعمالي</a></div></div><div class="card"><h3>صورة</h3><p>ضع صورتك هنا.</p></div></section><section id="work" class="section container"><h2 class="section-title">مشاريع مختارة</h2><div class="grid"><article class="card"><h3>مشروع 1</h3><p>وصف مختصر.</p></article><article class="card"><h3>مشروع 2</h3><p>وصف مختصر.</p></article></div></section></main>${FOOTER}`),
+    files: baseFiles(
+      `${HEADER}<main><section class="container hero"><div><h1>مرحبًا، أنا…</h1><p>مطوّر/مصمّم أبني منتجات رقمية.</p><div class="hero-actions"><a class="btn" href="#work">أعمالي</a></div></div><div class="card"><h3>صورة</h3><p>ضع صورتك هنا.</p></div></section><section id="work" class="section container"><h2 class="section-title">مشاريع مختارة</h2><div class="grid"><article class="card"><h3>مشروع 1</h3><p>وصف مختصر.</p></article><article class="card"><h3>مشروع 2</h3><p>وصف مختصر.</p></article></div></section></main>${FOOTER}`,
+    ),
   },
   {
     id: "dashboard",

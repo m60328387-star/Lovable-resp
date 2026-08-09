@@ -48,8 +48,11 @@ function inlineModules(js: string, from: string, byPath: Map<string, string>, de
       byPath.get(`${target}/index.js`) ??
       byPath.get(`${target}.mjs`);
     if (source === undefined) return tag;
-    const resolved =
-      byPath.has(target) ? target : byPath.has(`${target}.js`) ? `${target}.js` : `${target}/index.js`;
+    const resolved = byPath.has(target)
+      ? target
+      : byPath.has(`${target}.js`)
+        ? `${target}.js`
+        : `${target}/index.js`;
     const inlined = inlineModules(source, resolved, byPath, depth + 1);
     const url = `data:text/javascript;base64,${btoa(unescape(encodeURIComponent(inlined)))}`;
     return `${prefix}"${url}"`;
@@ -62,7 +65,9 @@ function buildDocument(entry: PreviewFile, byPath: Map<string, string>): string 
   html = html.replace(/<link\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>/gi, (tag, href: string) => {
     if (!/stylesheet/i.test(tag) || isExternal(href)) return tag;
     const css = byPath.get(resolvePath(entry.path, href));
-    return css ? `<style>\n${inlineCss(css, resolvePath(entry.path, href), byPath)}\n</style>` : tag;
+    return css
+      ? `<style>\n${inlineCss(css, resolvePath(entry.path, href), byPath)}\n</style>`
+      : tag;
   });
 
   html = html.replace(
@@ -78,14 +83,19 @@ function buildDocument(entry: PreviewFile, byPath: Map<string, string>): string 
     },
   );
 
-  html = html.replace(/(<(?:img|source|video|audio)\b[^>]*\ssrc\s*=\s*)["']([^"']+)["']/gi, (tag, prefix: string, src: string) => {
-    if (isExternal(src)) return tag;
-    const asset = byPath.get(resolvePath(entry.path, src));
-    return asset && asset.startsWith("data:") ? `${prefix}"${asset}"` : tag;
-  });
+  html = html.replace(
+    /(<(?:img|source|video|audio)\b[^>]*\ssrc\s*=\s*)["']([^"']+)["']/gi,
+    (tag, prefix: string, src: string) => {
+      if (isExternal(src)) return tag;
+      const asset = byPath.get(resolvePath(entry.path, src));
+      return asset && asset.startsWith("data:") ? `${prefix}"${asset}"` : tag;
+    },
+  );
 
-  html = html.replace(/<style\b([^>]*)>([\s\S]*?)<\/style>/gi, (_tag, attrs: string, css: string) =>
-    `<style${attrs}>${inlineCss(css, entry.path, byPath)}</style>`,
+  html = html.replace(
+    /<style\b([^>]*)>([\s\S]*?)<\/style>/gi,
+    (_tag, attrs: string, css: string) =>
+      `<style${attrs}>${inlineCss(css, entry.path, byPath)}</style>`,
   );
 
   return html;
@@ -137,8 +147,6 @@ function navShell(pages: Record<string, string>, current: string) {
   );
 }
 
-
-
 /**
  * يجمع ملفات مساحة العمل في مستند HTML واحد قابل للعرض داخل iframe:
  * يدمج CSS/JS/الصور المحلية، ويحلّ استيرادات ES، ويشغّل التنقل بين الصفحات.
@@ -175,4 +183,3 @@ export function buildPreviewDocument(files: PreviewFile[]): string | null {
   const nav = navShell(pages, entry.path);
   return doc.includes("</body>") ? doc.replace(/<\/body>/i, `${nav}</body>`) : doc + nav;
 }
-

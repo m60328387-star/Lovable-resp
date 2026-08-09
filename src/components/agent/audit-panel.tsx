@@ -52,7 +52,9 @@ export function AuditPanel() {
                   setAlertNote(
                     res.throttled
                       ? "تم كتم التنبيه مؤقتاً (مكرّر)."
-                      : res.channels.map((c) => `${c.channel}: ${c.sent ? "أُرسل" : c.reason}`).join(" — "),
+                      : res.channels
+                          .map((c) => `${c.channel}: ${c.sent ? "أُرسل" : c.reason}`)
+                          .join(" — "),
                   ),
                 )
                 .catch((e: unknown) => setAlertNote(e instanceof Error ? e.message : String(e)));
@@ -134,7 +136,10 @@ export function AuditPanel() {
           {data.sandbox.breakers
             .filter((b) => b.open)
             .map((b) => (
-              <span key={b.name} className="rounded-lg border border-destructive/40 px-2 py-1 text-destructive">
+              <span
+                key={b.name}
+                className="rounded-lg border border-destructive/40 px-2 py-1 text-destructive"
+              >
                 موقوف مؤقتاً: {b.name}
               </span>
             ))}
@@ -168,7 +173,9 @@ export function AuditPanel() {
                 <td className="p-2">{row.kind}</td>
                 <td className="p-2 font-medium">
                   {row.name}
-                  {row.target ? <div className="text-[11px] text-muted-foreground">{row.target}</div> : null}
+                  {row.target ? (
+                    <div className="text-[11px] text-muted-foreground">{row.target}</div>
+                  ) : null}
                 </td>
                 <td className="p-2">
                   {row.ok ? (

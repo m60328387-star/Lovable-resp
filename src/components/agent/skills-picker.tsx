@@ -18,9 +18,12 @@ export function SkillsPicker() {
     ...SKILLS.map((s) => ({ id: s.id, name: s.name, desc: s.desc })),
     ...(custom.data ?? [])
       .filter((s) => s.enabled)
-      .map((s) => ({ id: `custom:${s.slug}`, name: s.name, desc: s.description || "مهارة مخصّصة" })),
+      .map((s) => ({
+        id: `custom:${s.slug}`,
+        name: s.name,
+        desc: s.description || "مهارة مخصّصة",
+      })),
   ];
-
 
   return (
     <div className="relative">

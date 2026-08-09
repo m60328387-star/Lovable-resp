@@ -26,11 +26,31 @@ export WEAVER_SCHEDULER_SECRET="${WEAVER_SCHEDULER_SECRET:-$(remote_var WEAVER_S
 export WEAVER_WORKER_TOKEN="${WEAVER_WORKER_TOKEN:-$(remote_var WEAVER_WORKER_TOKEN)}"
 export SESSION_SECRET="${SESSION_SECRET:-$(remote_var SESSION_SECRET)}"
 
+# مفاتيح المزوّدين وإعدادات المستخدم: تُستعاد من الخادم إن لم تُمرَّر،
+# وإلا كان كل نشر يمسح GEMINI/GROQ ويعيد النموذج إلى الافتراضي.
+export OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-$(remote_var OPENROUTER_API_KEY)}"
+export OPENROUTER_MODEL="${OPENROUTER_MODEL:-$(remote_var OPENROUTER_MODEL)}"
+export OPENROUTER_MODEL="${OPENROUTER_MODEL:-deepseek/deepseek-chat-v3.1}"
+
+export GEMINI_API_KEY="${GEMINI_API_KEY:-$(remote_var GEMINI_API_KEY)}"
+export GROQ_API_KEY="${GROQ_API_KEY:-$(remote_var GROQ_API_KEY)}"
+export GITHUB_TOKEN="${GITHUB_TOKEN:-$(remote_var GITHUB_TOKEN)}"
+export GITHUB_REPO_URL="${GITHUB_REPO_URL:-$(remote_var GITHUB_REPO_URL)}"
+export EXECUTOR_TOKEN="${EXECUTOR_TOKEN:-$(remote_var EXECUTOR_TOKEN)}"
+export SUPABASE_SERVICE_ROLE_KEY="${SUPABASE_SERVICE_ROLE_KEY:-$(remote_var SUPABASE_SERVICE_ROLE_KEY)}"
+export SUPABASE_URL="${SUPABASE_URL:-$(remote_var SUPABASE_URL)}"
+export SUPABASE_PUBLISHABLE_KEY="${SUPABASE_PUBLISHABLE_KEY:-$(remote_var SUPABASE_PUBLISHABLE_KEY)}"
+export WEAVER_OWNER_EMAIL="${WEAVER_OWNER_EMAIL:-$(remote_var WEAVER_OWNER_EMAIL)}"
+export WEAVER_PASSCODE="${WEAVER_PASSCODE:-$(remote_var WEAVER_PASSCODE)}"
+
 # Generate any secret that does not exist yet
 export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-$(openssl rand -hex 32)}"
 export WEAVER_SCHEDULER_SECRET="${WEAVER_SCHEDULER_SECRET:-$(openssl rand -hex 32)}"
 export WEAVER_WORKER_TOKEN="${WEAVER_WORKER_TOKEN:-$(openssl rand -hex 32)}"
 export SESSION_SECRET="${SESSION_SECRET:-$(openssl rand -hex 48)}"
+export EXECUTOR_TOKEN="${EXECUTOR_TOKEN:-$(openssl rand -hex 32)}"
+export DEPLOY_HOOK_PORT="${DEPLOY_HOOK_PORT:-8790}"
+
 
 # Ensure required user-provided variables are present
 if [ -z "${WEAVER_OWNER_EMAIL:-}" ] || [ -z "${WEAVER_PASSCODE:-}" ] || [ -z "${OPENROUTER_API_KEY:-}" ]; then
@@ -83,7 +103,7 @@ SESSION_SECRET={os.environ['SESSION_SECRET']}
 WEAVER_DOMAIN=
 WEAVER_EMAIL={os.environ['WEAVER_OWNER_EMAIL']}
 OPENROUTER_API_KEY={os.environ['OPENROUTER_API_KEY']}
-OPENROUTER_MODEL=openrouter/auto
+OPENROUTER_MODEL={os.environ.get('OPENROUTER_MODEL') or 'openrouter/auto'}
 GEMINI_API_KEY={os.environ.get('GEMINI_API_KEY', '')}
 GROQ_API_KEY={os.environ.get('GROQ_API_KEY', '')}
 SUPABASE_URL={os.environ['SUPABASE_URL']}
@@ -96,6 +116,9 @@ WEAVER_PASSCODE={os.environ['WEAVER_PASSCODE']}
 WEAVER_SCHEDULER_SECRET={os.environ['WEAVER_SCHEDULER_SECRET']}
 WEAVER_WORKER_TOKEN={os.environ['WEAVER_WORKER_TOKEN']}
 EXECUTOR_TOKEN={os.environ.get('EXECUTOR_TOKEN', '')}
+DEPLOY_HOOK_PORT={os.environ.get('DEPLOY_HOOK_PORT', '8790')}
+PLATFORM_DEPLOY_URL=http://host.docker.internal:{os.environ.get('DEPLOY_HOOK_PORT', '8790')}/deploy
+
 """)
 PYEOF
 
@@ -121,6 +144,38 @@ $SSH "$SERVER" '
     [ -f "$f" ] && docker compose exec -T db psql -U weaver -d weaver -v ON_ERROR_STOP=1 < "$f"
   done
 '
+
+# 5b. خطّاف النشر: خدمة systemd تتيح النشر والتراجع من داخل واجهة Weaver
+$SSH "$SERVER" '
+  set -e
+  command -v node >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq nodejs; }
+  cat > /etc/systemd/system/weaver-deploy-hook.service <<UNIT
+[Unit]
+Description=Weaver deploy hook
+After=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/weaver
+EnvironmentFile=/opt/weaver/deploy/.env
+ExecStart=/usr/bin/env node /opt/weaver/deploy/deploy-hook.mjs
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  systemctl daemon-reload
+  systemctl enable --now weaver-deploy-hook.service
+  systemctl restart weaver-deploy-hook.service
+  # لا يُفتح المنفذ للإنترنت: يُسمح فقط لشبكة Docker
+  if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
+    ufw deny 8790/tcp >/dev/null 2>&1 || true
+  fi
+  sleep 2
+  systemctl is-active weaver-deploy-hook.service
+'
+
 
 
 # 6. التحقق بعد النشر: الصحة + ملفات الواجهة + صفحة الدخول

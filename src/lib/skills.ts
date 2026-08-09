@@ -377,10 +377,6 @@ export const SKILLS: Skill[] = [
   },
 ];
 
-
-
-
-
 export function skillPrompt(ids: string[]): string {
   const active = SKILLS.filter((s) => ids.includes(s.id));
   if (active.length === 0) return "";

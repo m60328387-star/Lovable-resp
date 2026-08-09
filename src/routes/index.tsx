@@ -79,17 +79,37 @@ const PILLARS = [
 const MODES = [
   { icon: Hammer, name: "بناء", desc: "الدورة الكاملة: مواصفات، مهام، ملفات فعلية، فحص، ثم نشر." },
   { icon: Search, name: "بحث", desc: "بحث حيّ على الإنترنت، قراءة المصادر، وملخّص بمراجع مرقّمة." },
-  { icon: MessagesSquare, name: "استشارة", desc: "توصية صريحة وبدائل ومخاطر وخطوة تالية — بلا ملفات." },
+  {
+    icon: MessagesSquare,
+    name: "استشارة",
+    desc: "توصية صريحة وبدائل ومخاطر وخطوة تالية — بلا ملفات.",
+  },
   { icon: Bot, name: "بوت تيليغرام", desc: "توكن BotFather → بوت حيّ يردّ تلقائياً، مع Mini App." },
 ];
 
 const CAPABILITIES = [
-  { icon: FileCode2, title: "مساحة ملفات كاملة", desc: "كتابة وقراءة وحذف الملفات مع إصدارات لكل تعديل واستيراد ملفات ZIP وإصلاحها." },
+  {
+    icon: FileCode2,
+    title: "مساحة ملفات كاملة",
+    desc: "كتابة وقراءة وحذف الملفات مع إصدارات لكل تعديل واستيراد ملفات ZIP وإصلاحها.",
+  },
   { icon: Globe, title: "نشر مباشر", desc: "رابط عام لكل مشروع خلال ثوانٍ، مع تتبّع الزيارات." },
-  { icon: Database, title: "قاعدة بيانات لكل مشروع", desc: "مخطط معزول لكل موقع مع فحص وتنفيذ SQL واستعلامات آمنة." },
+  {
+    icon: Database,
+    title: "قاعدة بيانات لكل مشروع",
+    desc: "مخطط معزول لكل موقع مع فحص وتنفيذ SQL واستعلامات آمنة.",
+  },
   { icon: ImageIcon, title: "توليد الصور", desc: "أصول بصرية تُولَّد وتُدرج داخل المشروع مباشرة." },
-  { icon: ShieldCheck, title: "فحص قبل التسليم", desc: "معايير HTML/CSS، وصولية WCAG AA، RTL، وSEO — تُفحص قبل النشر." },
-  { icon: Rocket, title: "قوالب وانطلاقة سريعة", desc: "قوالب جاهزة ومهارات قابلة للتفعيل حسب نوع المشروع." },
+  {
+    icon: ShieldCheck,
+    title: "فحص قبل التسليم",
+    desc: "معايير HTML/CSS، وصولية WCAG AA، RTL، وSEO — تُفحص قبل النشر.",
+  },
+  {
+    icon: Rocket,
+    title: "قوالب وانطلاقة سريعة",
+    desc: "قوالب جاهزة ومهارات قابلة للتفعيل حسب نوع المشروع.",
+  },
 ];
 
 const FAQ = [
@@ -330,7 +350,9 @@ function Landing() {
 
         <section className="mx-auto w-full max-w-5xl px-5 pb-20">
           <div className="grid-paper rounded-2xl border bg-card p-8 text-center shadow-lift sm:p-12">
-            <h2 className="text-[22px] font-bold tracking-tight">جاهز لتحويل فكرة إلى موقع منشور؟</h2>
+            <h2 className="text-[22px] font-bold tracking-tight">
+              جاهز لتحويل فكرة إلى موقع منشور؟
+            </h2>
             <p className="mx-auto mt-3 max-w-xl text-[14px] leading-relaxed text-muted-foreground">
               اكتب طلبك بجملة واحدة، ودع Weaver يكتب المواصفات ويبني الملفات ويفحصها وينشرها.
             </p>
@@ -351,7 +373,9 @@ function Landing() {
             <Workflow className="size-3.5" />
           </span>
           <span className="text-[13px] font-bold">Weaver</span>
-          <span className="text-[12px] text-muted-foreground">وكيل هندسي — من الطلب إلى النشر.</span>
+          <span className="text-[12px] text-muted-foreground">
+            وكيل هندسي — من الطلب إلى النشر.
+          </span>
           <span className="ms-auto font-mono text-[11px] text-muted-foreground">
             © {new Date().getFullYear()}
           </span>

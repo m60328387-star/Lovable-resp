@@ -10,7 +10,8 @@ export const Route = createFileRoute("/_authenticated/worker")({
       { title: "مراقبة العامل الخلفي | Weaver" },
       {
         name: "description",
-        content: "لوحة مراقبة عامل Weaver الخلفي: حالة الطابور، زمن الخطوة، عدد المحاولات ومعدل الفشل.",
+        content:
+          "لوحة مراقبة عامل Weaver الخلفي: حالة الطابور، زمن الخطوة، عدد المحاولات ومعدل الفشل.",
       },
       { property: "og:title", content: "مراقبة العامل الخلفي | Weaver" },
       {
@@ -68,7 +69,8 @@ function WorkerPage() {
 
       <section className="rounded-xl border bg-card p-4">
         <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
-          <Timer className="size-4 text-primary" /> أداء الأدوات (آخر 7 أيام) — معدل الفشل {failureRate}%
+          <Timer className="size-4 text-primary" /> أداء الأدوات (آخر 7 أيام) — معدل الفشل{" "}
+          {failureRate}%
         </h2>
         <div className="overflow-x-auto">
           <table className="w-full text-right text-[12px]">
@@ -125,7 +127,10 @@ function WorkerPage() {
         <h2 className="mb-3 text-sm font-semibold">آخر المهام</h2>
         <ul className="space-y-1 text-[12px]">
           {(data?.recent ?? []).map((j) => (
-            <li key={j.id} className="flex flex-wrap items-center gap-2 border-b py-1 last:border-0">
+            <li
+              key={j.id}
+              className="flex flex-wrap items-center gap-2 border-b py-1 last:border-0"
+            >
               <span className="font-mono">{j.id.slice(0, 8)}</span>
               <span>{j.status}</span>
               <span className="text-muted-foreground">{j.phase}</span>

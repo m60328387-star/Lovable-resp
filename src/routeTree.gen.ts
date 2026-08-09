@@ -25,6 +25,7 @@ import { Route as AuthenticatedCThreadIdRouteImport } from './routes/_authentica
 import { Route as ApiPublicHealthRouteImport } from './routes/api/public/health'
 import { Route as ApiPublicExecutorActionRouteImport } from './routes/api/public/executor/$action'
 import { Route as ApiPublicHooksSchedulerRouteImport } from './routes/api/public/hooks/scheduler'
+import { Route as ApiPublicRtSplatRouteImport } from './routes/api/public/rt/$'
 import { Route as ApiPublicSiteSplatRouteImport } from './routes/api/public/site/$'
 import { Route as ApiPublicTgProjectIdRouteImport } from './routes/api/public/tg/$projectId'
 import { Route as ApiPublicWorkerTickRouteImport } from './routes/api/public/worker/tick'
@@ -108,6 +109,11 @@ const ApiPublicHooksSchedulerRoute = ApiPublicHooksSchedulerRouteImport.update({
   path: '/api/public/hooks/scheduler',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicRtSplatRoute = ApiPublicRtSplatRouteImport.update({
+  id: '/api/public/rt/$',
+  path: '/api/public/rt/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicSiteSplatRoute = ApiPublicSiteSplatRouteImport.update({
   id: '/api/public/site/$',
   path: '/api/public/site/$',
@@ -140,6 +146,7 @@ export interface FileRoutesByFullPath {
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/executor/$action': typeof ApiPublicExecutorActionRoute
   '/api/public/hooks/scheduler': typeof ApiPublicHooksSchedulerRoute
+  '/api/public/rt/$': typeof ApiPublicRtSplatRoute
   '/api/public/site/$': typeof ApiPublicSiteSplatRoute
   '/api/public/tg/$projectId': typeof ApiPublicTgProjectIdRoute
   '/api/public/worker/tick': typeof ApiPublicWorkerTickRoute
@@ -160,6 +167,7 @@ export interface FileRoutesByTo {
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/executor/$action': typeof ApiPublicExecutorActionRoute
   '/api/public/hooks/scheduler': typeof ApiPublicHooksSchedulerRoute
+  '/api/public/rt/$': typeof ApiPublicRtSplatRoute
   '/api/public/site/$': typeof ApiPublicSiteSplatRoute
   '/api/public/tg/$projectId': typeof ApiPublicTgProjectIdRoute
   '/api/public/worker/tick': typeof ApiPublicWorkerTickRoute
@@ -182,6 +190,7 @@ export interface FileRoutesById {
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/executor/$action': typeof ApiPublicExecutorActionRoute
   '/api/public/hooks/scheduler': typeof ApiPublicHooksSchedulerRoute
+  '/api/public/rt/$': typeof ApiPublicRtSplatRoute
   '/api/public/site/$': typeof ApiPublicSiteSplatRoute
   '/api/public/tg/$projectId': typeof ApiPublicTgProjectIdRoute
   '/api/public/worker/tick': typeof ApiPublicWorkerTickRoute
@@ -204,6 +213,7 @@ export interface FileRouteTypes {
     | '/api/public/health'
     | '/api/public/executor/$action'
     | '/api/public/hooks/scheduler'
+    | '/api/public/rt/$'
     | '/api/public/site/$'
     | '/api/public/tg/$projectId'
     | '/api/public/worker/tick'
@@ -224,6 +234,7 @@ export interface FileRouteTypes {
     | '/api/public/health'
     | '/api/public/executor/$action'
     | '/api/public/hooks/scheduler'
+    | '/api/public/rt/$'
     | '/api/public/site/$'
     | '/api/public/tg/$projectId'
     | '/api/public/worker/tick'
@@ -245,6 +256,7 @@ export interface FileRouteTypes {
     | '/api/public/health'
     | '/api/public/executor/$action'
     | '/api/public/hooks/scheduler'
+    | '/api/public/rt/$'
     | '/api/public/site/$'
     | '/api/public/tg/$projectId'
     | '/api/public/worker/tick'
@@ -259,6 +271,7 @@ export interface RootRouteChildren {
   ApiPublicHealthRoute: typeof ApiPublicHealthRoute
   ApiPublicExecutorActionRoute: typeof ApiPublicExecutorActionRoute
   ApiPublicHooksSchedulerRoute: typeof ApiPublicHooksSchedulerRoute
+  ApiPublicRtSplatRoute: typeof ApiPublicRtSplatRoute
   ApiPublicSiteSplatRoute: typeof ApiPublicSiteSplatRoute
   ApiPublicTgProjectIdRoute: typeof ApiPublicTgProjectIdRoute
   ApiPublicWorkerTickRoute: typeof ApiPublicWorkerTickRoute
@@ -378,6 +391,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksSchedulerRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/rt/$': {
+      id: '/api/public/rt/$'
+      path: '/api/public/rt/$'
+      fullPath: '/api/public/rt/$'
+      preLoaderRoute: typeof ApiPublicRtSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/site/$': {
       id: '/api/public/site/$'
       path: '/api/public/site/$'
@@ -436,6 +456,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicHealthRoute: ApiPublicHealthRoute,
   ApiPublicExecutorActionRoute: ApiPublicExecutorActionRoute,
   ApiPublicHooksSchedulerRoute: ApiPublicHooksSchedulerRoute,
+  ApiPublicRtSplatRoute: ApiPublicRtSplatRoute,
   ApiPublicSiteSplatRoute: ApiPublicSiteSplatRoute,
   ApiPublicTgProjectIdRoute: ApiPublicTgProjectIdRoute,
   ApiPublicWorkerTickRoute: ApiPublicWorkerTickRoute,
@@ -443,3 +464,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

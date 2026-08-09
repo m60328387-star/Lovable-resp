@@ -48,7 +48,7 @@ const OPTIONAL: { name: string; hint: string }[] = [
 export const getMonitorSnapshot = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async (): Promise<MonitorSnapshot> => {
-    const withTimeout = <T,>(work: Promise<T>, ms = 6000): Promise<T> =>
+    const withTimeout = <T>(work: Promise<T>, ms = 6000): Promise<T> =>
       Promise.race([
         work,
         new Promise<T>((_, reject) =>
@@ -73,13 +73,17 @@ export const getMonitorSnapshot = createServerFn({ method: "POST" })
 
     const alerts: string[] = [];
     for (const item of env) {
-      if (item.critical && !item.present) alerts.push(`متغيّر حرج مفقود: ${item.name} — ${item.hint}`);
+      if (item.critical && !item.present)
+        alerts.push(`متغيّر حرج مفقود: ${item.name} — ${item.hint}`);
     }
     const workerToken = (process.env["WEAVER_WORKER_TOKEN"] ?? "").trim();
     if (workerToken && workerToken.length < 16) {
       alerts.push("WEAVER_WORKER_TOKEN قصير جداً (أقل من 16 محرفاً) — العامل الخلفي سيرفض العمل.");
     }
-    if (!(process.env["SUPABASE_URL"] ?? "").trim() || !(process.env["SUPABASE_PUBLISHABLE_KEY"] ?? "").trim()) {
+    if (
+      !(process.env["SUPABASE_URL"] ?? "").trim() ||
+      !(process.env["SUPABASE_PUBLISHABLE_KEY"] ?? "").trim()
+    ) {
       alerts.push(
         "متغيّرات VITE_SUPABASE_* لن تُحقن وقت البناء — ستظهر لافتة «Missing Supabase environment variable(s)» في الواجهة.",
       );
@@ -94,12 +98,14 @@ export const getMonitorSnapshot = createServerFn({ method: "POST" })
     try {
       const sql = getSql();
       await withTimeout(Promise.resolve(sql`SELECT 1`));
-      const eventRows = await withTimeout(Promise.resolve(sql`
+      const eventRows = await withTimeout(
+        Promise.resolve(sql`
         SELECT id::text, kind, label, detail, ok, created_at
         FROM public.agent_job_events
         ORDER BY created_at DESC
         LIMIT 80
-      `));
+      `),
+      );
       events = (eventRows as unknown as Array<Record<string, unknown>>).map((row) => ({
         id: String(row["id"]),
         kind: String(row["kind"]),
@@ -111,9 +117,11 @@ export const getMonitorSnapshot = createServerFn({ method: "POST" })
       }));
       workerLastSeen = events[0]?.created_at ?? null;
 
-      const jobRows = await withTimeout(Promise.resolve(sql`
+      const jobRows = await withTimeout(
+        Promise.resolve(sql`
         SELECT status, count(*)::int AS count FROM public.agent_jobs GROUP BY status
-      `));
+      `),
+      );
       jobs = (jobRows as unknown as Array<{ status: string; count: number }>).map((row) => ({
         status: row.status,
         count: Number(row.count),

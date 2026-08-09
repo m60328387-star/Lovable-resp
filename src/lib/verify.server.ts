@@ -131,6 +131,37 @@ function checkHtml(file: WorkspaceFile, all: WorkspaceFile[]): Issue[] {
   const issues: Issue[] = [];
   const html = file.content;
 
+  // لغة المحتوى: أي حروف صينية/يابانية/كورية تعني أن النموذج خرج عن لغة الطلب.
+  if (/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/.test(html)) {
+    issues.push({
+      path: file.path,
+      severity: "error",
+      message: "المحتوى يحتوي نصوصاً بلغة غير مطلوبة (صينية/يابانية/كورية) — أعد كتابته بالعربية",
+    });
+  }
+
+  // حجم الصفحة: صفحة ضخمة تعني تكراراً يجب نقله إلى CSS/JS أو صفحات مستقلة.
+  const lineCount = html.split("\n").length;
+  if (html.length > 60000 || lineCount > 800) {
+    issues.push({
+      path: file.path,
+      severity: "warning",
+      message: `الصفحة ضخمة (${lineCount} سطراً) — انقل الأنماط إلى styles.css والعناصر المتكررة إلى قالب في script.js أو صفحات مستقلة`,
+    });
+  }
+
+  const inlineStyle = [...html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)].reduce(
+    (sum, m) => sum + (m[1]?.length ?? 0),
+    0,
+  );
+  if (inlineStyle > 4000) {
+    issues.push({
+      path: file.path,
+      severity: "warning",
+      message: "كتلة <style> داخلية ضخمة — انقلها إلى styles.css",
+    });
+  }
+
   const stack: string[] = [];
   const tagRe = /<\/?([a-zA-Z][a-zA-Z0-9-]*)\b[^>]*?(\/?)>/g;
   const stripped = html
@@ -261,17 +292,23 @@ function checkHtml(file: WorkspaceFile, all: WorkspaceFile[]): Issue[] {
   const refRe = /(?:href|src)\s*=\s*["']([^"']+)["']/gi;
   let ref: RegExpExecArray | null;
   while ((ref = refRe.exec(html)) !== null) {
-    const value = ref[1] ?? "";
-    if (/^(https?:|data:|mailto:|tel:|#|\/\/)/i.test(value)) continue;
+    const raw = ref[1] ?? "";
+    if (/^(https?:|data:|mailto:|tel:|#|\/\/|javascript:|blob:)/i.test(raw)) continue;
+    // تجريد المرساة والاستعلام قبل المقارنة: "index.html#about" و"a.css?v=2" ملفان صالحان.
+    const value = raw.split("#")[0]?.split("?")[0] ?? "";
+    if (!value) continue; // مرساة داخلية فقط
     const dir = file.path.includes("/") ? file.path.slice(0, file.path.lastIndexOf("/") + 1) : "";
-    const resolved = value.startsWith("/")
+    let resolved = value.startsWith("/")
       ? value.slice(1)
       : normalize(dir + value.replace(/^\.\//, ""));
-    if (!known.has(resolved)) {
+    // الجذر "/" أو مسار مجلد ينتهي بشرطة يقابل index.html
+    if (resolved === "" || value.endsWith("/"))
+      resolved = `${resolved}${resolved ? "/" : ""}index.html`;
+    if (!known.has(resolved) && !known.has(`${resolved}/index.html`)) {
       issues.push({
         path: file.path,
         severity: "error",
-        message: `مرجع مفقود في مساحة العمل: ${value}`,
+        message: `مرجع مفقود في مساحة العمل: ${raw}`,
       });
     }
   }

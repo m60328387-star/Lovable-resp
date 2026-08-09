@@ -60,32 +60,32 @@ export function candidatesFor(kind: TaskKind, openRouterModel?: string): Candida
     case "fast":
       return [
         { provider: "groq", model: envModel("GROQ_FAST_MODEL", "llama-3.3-70b-versatile") },
-        { provider: "gemini", model: envModel("GEMINI_FAST_MODEL", "gemini-2.5-flash") },
-        orFallback("google/gemini-2.5-flash"),
+        { provider: "gemini", model: envModel("GEMINI_FAST_MODEL", "gemini-flash-latest") },
+        orFallback("google/gemini-flash-1.5"),
       ];
     // الرؤية والتصميم: Gemini أولاً (أقوى بصرياً وأرخص)
     case "vision":
       return [
-        { provider: "gemini", model: envModel("GEMINI_VISION_MODEL", "gemini-2.5-flash") },
-        orFallback("google/gemini-2.5-flash"),
+        { provider: "gemini", model: envModel("GEMINI_VISION_MODEL", "gemini-flash-latest") },
+        orFallback("google/gemini-flash-1.5"),
       ];
+
     // الاستدلال والقرارات المعمارية: OpenRouter (أفضل جودة) ثم Gemini Pro
     case "reasoning":
     case "coding":
     default:
       return [
-        orFallback("anthropic/claude-sonnet-4.6"),
-        { provider: "gemini", model: envModel("GEMINI_REASONING_MODEL", "gemini-2.5-pro") },
+        orFallback("deepseek/deepseek-chat-v3.1"),
+        { provider: "gemini", model: envModel("GEMINI_REASONING_MODEL", "gemini-pro-latest") },
+
+        { provider: "gemini", model: envModel("GEMINI_FAST_MODEL", "gemini-flash-latest") },
       ];
   }
 }
 
 export type RoutedContent =
   | string
-  | Array<
-      | { type: "text"; text: string }
-      | { type: "image_url"; image_url: { url: string } }
-    >;
+  | Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }>;
 
 export interface RoutedResult {
   text: string;
@@ -124,7 +124,9 @@ async function callProvider(
   });
 
   if (!response.ok) {
-    throw new Error(`${candidate.provider} ${response.status}: ${(await response.text()).slice(0, 300)}`);
+    throw new Error(
+      `${candidate.provider} ${response.status}: ${(await response.text()).slice(0, 300)}`,
+    );
   }
 
   const json = (await response.json()) as {
@@ -169,7 +171,9 @@ export async function routedCall(opts: {
     }
   }
 
-  throw new Error(`فشل كل المزوّدين: ${attempts.map((a) => `${a.provider}(${a.error})`).join(" | ")}`);
+  throw new Error(
+    `فشل كل المزوّدين: ${attempts.map((a) => `${a.provider}(${a.error})`).join(" | ")}`,
+  );
 }
 
 /** حالة المزوّدين لعرضها في لوحة المراقبة. */

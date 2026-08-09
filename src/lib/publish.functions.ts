@@ -24,7 +24,12 @@ export const getPublishState = createServerFn({ method: "POST" })
       WHERE id = ${data.projectId}
     `;
     if (!row) throw new Error("المشروع غير موجود");
-    return row as { slug: string | null; published: boolean; published_at: string | null; title: string };
+    return row as {
+      slug: string | null;
+      published: boolean;
+      published_at: string | null;
+      title: string;
+    };
   });
 
 /** ينشر مساحة عمل المشروع كموقع عام على مسار /s/<slug>. */
@@ -46,7 +51,11 @@ export const publishProject = createServerFn({ method: "POST" })
       WHERE id = ${data.projectId} AND user_id = ${context.userId}
     `;
     if (!project) throw new Error("المشروع غير موجود");
-    const { id, title, slug: existingSlug } = project as unknown as { id: string; title: string; slug: string | null };
+    const {
+      id,
+      title,
+      slug: existingSlug,
+    } = project as unknown as { id: string; title: string; slug: string | null };
 
     const files = await sql`
       SELECT path, content
@@ -71,7 +80,7 @@ export const publishProject = createServerFn({ method: "POST" })
       throw new Error("نفّذ فحص الجودة بنجاح قبل النشر.");
     }
 
-    let slug = data.slug ? slugify(data.slug) : (existingSlug ?? slugify(title));
+    const slug = data.slug ? slugify(data.slug) : (existingSlug ?? slugify(title));
     for (let i = 0; i < 25; i++) {
       const candidate = i === 0 ? slug : `${slug}-${i + 1}`;
       try {

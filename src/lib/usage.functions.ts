@@ -18,7 +18,10 @@ export const getUsage = createServerFn({ method: "POST" })
     ]);
 
     const events = projectRows.data ?? [];
-    const byModel = new Map<string, { model: string; tokens: number; cost: number; calls: number }>();
+    const byModel = new Map<
+      string,
+      { model: string; tokens: number; cost: number; calls: number }
+    >();
     for (const row of events) {
       const current = byModel.get(row.model) ?? { model: row.model, tokens: 0, cost: 0, calls: 0 };
       current.tokens += row.total_tokens;
@@ -61,9 +64,7 @@ export const getUsage = createServerFn({ method: "POST" })
 export const getUsageSummary = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { data } = await context.supabase
-      .from("usage_events")
-      .select("total_tokens, cost_usd");
+    const { data } = await context.supabase.from("usage_events").select("total_tokens, cost_usd");
     const rows = data ?? [];
     return {
       requests: rows.length,

@@ -38,7 +38,9 @@ const mapChange = (r: Record<string, unknown>): PlatformChangeView => ({
 /** يسرد ملفات كود المنصة من المستودع. */
 export const listPlatformFiles = createServerFn({ method: "POST" })
   .middleware([requireWeaverAuth])
-  .inputValidator((input: { prefix?: string }) => z.object({ prefix: z.string().optional() }).parse(input))
+  .inputValidator((input: { prefix?: string }) =>
+    z.object({ prefix: z.string().optional() }).parse(input),
+  )
   .handler(async ({ data }): Promise<PlatformFile[]> => {
     const { getSelfRepo, selfList } = await import("@/lib/self-repo.server");
     const repo = getSelfRepo();
@@ -62,14 +64,15 @@ export const readPlatformFile = createServerFn({ method: "POST" })
 /** يسجّل تغييراً مقترحاً على المنصة (بلا كتابة) لعرضه كـDiff قبل الاعتماد. */
 export const proposePlatformChange = createServerFn({ method: "POST" })
   .middleware([requireWeaverAuth])
-  .inputValidator((input: { title: string; description?: string; files: { path: string; after: string }[] }) =>
-    z
-      .object({
-        title: z.string().min(1),
-        description: z.string().optional(),
-        files: z.array(z.object({ path: z.string().min(1), after: z.string() })).min(1),
-      })
-      .parse(input),
+  .inputValidator(
+    (input: { title: string; description?: string; files: { path: string; after: string }[] }) =>
+      z
+        .object({
+          title: z.string().min(1),
+          description: z.string().optional(),
+          files: z.array(z.object({ path: z.string().min(1), after: z.string() })).min(1),
+        })
+        .parse(input),
   )
   .handler(async ({ data, context }) => {
     const { getSql } = await import("@/lib/db");
@@ -115,7 +118,9 @@ export const listPlatformChanges = createServerFn({ method: "POST" })
 export const approvePlatformChange = createServerFn({ method: "POST" })
   .middleware([requireWeaverAuth])
   .inputValidator((input: { changeId: string; confirmSensitive?: boolean }) =>
-    z.object({ changeId: z.string().uuid(), confirmSensitive: z.boolean().optional() }).parse(input),
+    z
+      .object({ changeId: z.string().uuid(), confirmSensitive: z.boolean().optional() })
+      .parse(input),
   )
   .handler(async ({ data, context }) => {
     const { getSql } = await import("@/lib/db");
@@ -142,7 +147,12 @@ export const approvePlatformChange = createServerFn({ method: "POST" })
     const commits: string[] = [];
     try {
       for (const f of files) {
-        const out = await selfWrite(repo, f.path, f.after, `Weaver: ${String(row["title"])} — ${f.path}`);
+        const out = await selfWrite(
+          repo,
+          f.path,
+          f.after,
+          `Weaver: ${String(row["title"])} — ${f.path}`,
+        );
         commits.push(`${f.path}@${out.commit}`);
       }
     } catch (error) {
@@ -166,7 +176,9 @@ export const approvePlatformChange = createServerFn({ method: "POST" })
 /** يرفض تغييراً مقترحاً. */
 export const rejectPlatformChange = createServerFn({ method: "POST" })
   .middleware([requireWeaverAuth])
-  .inputValidator((input: { changeId: string }) => z.object({ changeId: z.string().uuid() }).parse(input))
+  .inputValidator((input: { changeId: string }) =>
+    z.object({ changeId: z.string().uuid() }).parse(input),
+  )
   .handler(async ({ data, context }) => {
     const { getSql } = await import("@/lib/db");
     const sql = getSql();
@@ -180,7 +192,9 @@ export const rejectPlatformChange = createServerFn({ method: "POST" })
 /** يتراجع عن تغيير مُعتمد بإعادة كتابة المحتوى السابق لكل ملف. */
 export const revertPlatformChange = createServerFn({ method: "POST" })
   .middleware([requireWeaverAuth])
-  .inputValidator((input: { changeId: string }) => z.object({ changeId: z.string().uuid() }).parse(input))
+  .inputValidator((input: { changeId: string }) =>
+    z.object({ changeId: z.string().uuid() }).parse(input),
+  )
   .handler(async ({ data, context }) => {
     const { getSql } = await import("@/lib/db");
     const { getSelfRepo, selfWrite } = await import("@/lib/self-repo.server");
@@ -206,7 +220,9 @@ export const revertPlatformChange = createServerFn({ method: "POST" })
 export const deployPlatform = createServerFn({ method: "POST" })
   .middleware([requireWeaverAuth])
   .inputValidator((input: { action?: "deploy" | "rollback"; ref?: string }) =>
-    z.object({ action: z.enum(["deploy", "rollback"]).optional(), ref: z.string().optional() }).parse(input),
+    z
+      .object({ action: z.enum(["deploy", "rollback"]).optional(), ref: z.string().optional() })
+      .parse(input),
   )
   .handler(async ({ data, context }) => {
     const { runDeployHook, recordDeploy } = await import("@/lib/platform.server");
@@ -216,13 +232,40 @@ export const deployPlatform = createServerFn({ method: "POST" })
     return result;
   });
 
+/** حالة النشر الحالية: خطّاف كونتابو، GitHub، والإصدار الأخير. */
+export const getDeployStatus = createServerFn({ method: "POST" })
+  .middleware([requireWeaverAuth])
+  .handler(async () => {
+    const { pingDeployHook, getGithubHead } = await import("@/lib/platform.server");
+    const { getSql } = await import("@/lib/db");
+    const { ensurePlatformTables } = await import("@/lib/platform.server");
+    await ensurePlatformTables();
+    const [hook, head, rows] = await Promise.all([
+      pingDeployHook(),
+      getGithubHead(),
+      getSql()`SELECT * FROM public.platform_deploys ORDER BY created_at DESC LIMIT 1`,
+    ]);
+    const last = rows[0]
+      ? {
+          id: String(rows[0]["id"]),
+          status: String(rows[0]["status"]),
+          kind: String(rows[0]["kind"]),
+          log: String(rows[0]["log"] ?? "").slice(0, 2000),
+          createdAt: String(rows[0]["created_at"]),
+          finishedAt: rows[0]["finished_at"] ? String(rows[0]["finished_at"]) : null,
+        }
+      : null;
+    return { hook, head, last };
+  });
+
 /** سجل عمليات النشر. */
 export const listDeploys = createServerFn({ method: "POST" })
   .middleware([requireWeaverAuth])
   .handler(async () => {
     const { getSql } = await import("@/lib/db");
-    const { ensurePlatformTables } = await import("@/lib/platform.server");
+    const { ensurePlatformTables, syncPendingDeploys } = await import("@/lib/platform.server");
     await ensurePlatformTables();
+    await syncPendingDeploys();
     const sql = getSql();
     const rows = await sql`SELECT * FROM public.platform_deploys ORDER BY created_at DESC LIMIT 25`;
     return rows.map((r) => ({
@@ -231,6 +274,7 @@ export const listDeploys = createServerFn({ method: "POST" })
       kind: String(r["kind"]),
       log: String(r["log"] ?? "").slice(0, 4000),
       createdAt: String(r["created_at"]),
+      finishedAt: r["finished_at"] ? String(r["finished_at"]) : null,
     }));
   });
 
@@ -299,7 +343,13 @@ export const listPromptVersions = createServerFn({ method: "POST" })
 export const savePromptVersion = createServerFn({ method: "POST" })
   .middleware([requireWeaverAuth])
   .inputValidator((input: { label: string; content: string; activate?: boolean }) =>
-    z.object({ label: z.string().min(1).max(80), content: z.string().max(20000), activate: z.boolean().optional() }).parse(input),
+    z
+      .object({
+        label: z.string().min(1).max(80),
+        content: z.string().max(20000),
+        activate: z.boolean().optional(),
+      })
+      .parse(input),
   )
   .handler(async ({ data, context }) => {
     const { getSql } = await import("@/lib/db");
@@ -319,7 +369,9 @@ export const savePromptVersion = createServerFn({ method: "POST" })
 
 export const activatePromptVersion = createServerFn({ method: "POST" })
   .middleware([requireWeaverAuth])
-  .inputValidator((input: { id: string | null }) => z.object({ id: z.string().uuid().nullable() }).parse(input))
+  .inputValidator((input: { id: string | null }) =>
+    z.object({ id: z.string().uuid().nullable() }).parse(input),
+  )
   .handler(async ({ data, context }) => {
     const { getSql } = await import("@/lib/db");
     const sql = getSql();
@@ -362,7 +414,9 @@ export const exportBackup = createServerFn({ method: "POST" })
 /** يستعيد ملفات المشاريع من نسخة احتياطية سابقة (لا يحذف شيئاً، يدمج). */
 export const restoreBackup = createServerFn({ method: "POST" })
   .middleware([requireWeaverAuth])
-  .inputValidator((input: { payload: string }) => z.object({ payload: z.string().min(2) }).parse(input))
+  .inputValidator((input: { payload: string }) =>
+    z.object({ payload: z.string().min(2) }).parse(input),
+  )
   .handler(async ({ data, context }) => {
     const { getSql } = await import("@/lib/db");
     const sql = getSql();

@@ -55,7 +55,27 @@ function decodeDataUrl(content: string): Response | null {
   });
 }
 
+/** رسالة خطأ خدمة مؤقتة بدل انفجار 500 عند تعذّر الوصول لقاعدة البيانات. */
+function unavailableResponse() {
+  return new Response(
+    `<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><title>غير متاح مؤقتًا</title><body style="font-family:system-ui;display:grid;place-items:center;height:100vh;margin:0"><div style="text-align:center"><h1>503</h1><p>الخدمة غير متاحة مؤقتًا. حاول بعد قليل.</p></div></body></html>`,
+    {
+      status: 503,
+      headers: { "Content-Type": "text/html; charset=utf-8", "Retry-After": "30" },
+    },
+  );
+}
+
 export async function serveSite(splat: string, request?: Request): Promise<Response> {
+  try {
+    return await serveSiteInner(splat, request);
+  } catch (error) {
+    console.error("[serve-site] failed", error);
+    return unavailableResponse();
+  }
+}
+
+async function serveSiteInner(splat: string, request?: Request): Promise<Response> {
   const parts = splat.split("/").filter(Boolean);
   const slug = parts.shift();
   if (!slug) return notFoundResponse();

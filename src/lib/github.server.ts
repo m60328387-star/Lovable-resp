@@ -1,9 +1,13 @@
 export type GhFile = { path: string; content: string };
 
 export function parseRepo(url: string): { owner: string; repo: string } {
-  const cleaned = url.trim().replace(/\.git$/, "").replace(/\/+$/, "");
+  const cleaned = url
+    .trim()
+    .replace(/\.git$/, "")
+    .replace(/\/+$/, "");
   const match = cleaned.match(/github\.com[/:]([^/]+)\/([^/]+)$/);
-  if (!match) throw new Error("رابط المستودع غير صالح. الشكل المتوقع: https://github.com/user/repo");
+  if (!match)
+    throw new Error("رابط المستودع غير صالح. الشكل المتوقع: https://github.com/user/repo");
   return { owner: match[1]!, repo: match[2]! };
 }
 
@@ -30,4 +34,3 @@ export async function gh(
     ...(init?.body ? { body: JSON.stringify(init.body) } : {}),
   });
 }
-

@@ -20,7 +20,9 @@ function decodeEntities(input: string) {
 }
 
 function stripTags(html: string) {
-  return decodeEntities(html.replace(/<[^>]*>/g, "")).replace(/\s+/g, " ").trim();
+  return decodeEntities(html.replace(/<[^>]*>/g, ""))
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** يفكّ روابط DuckDuckGo الوسيطة (/l/?uddg=...) إلى الرابط الحقيقي. */
@@ -39,10 +41,9 @@ function normalizeUrl(href: string) {
 
 /** محرك أساسي: Brave Search (HTML عام، بلا مفتاح). */
 async function braveSearch(query: string, limit: number): Promise<SearchResult[]> {
-  const response = await fetch(
-    `https://search.brave.com/search?q=${encodeURIComponent(query)}`,
-    { headers: { "User-Agent": UA, "Accept-Language": "ar,en;q=0.8" } },
-  );
+  const response = await fetch(`https://search.brave.com/search?q=${encodeURIComponent(query)}`, {
+    headers: { "User-Agent": UA, "Accept-Language": "ar,en;q=0.8" },
+  });
   if (!response.ok) return [];
   const html = await response.text();
   const results: SearchResult[] = [];
@@ -50,7 +51,9 @@ async function braveSearch(query: string, limit: number): Promise<SearchResult[]
   for (const block of html.split('data-type="web"').slice(1)) {
     const url = block.match(/<a href="(https?:\/\/[^"]+)"/)?.[1];
     if (!url) continue;
-    const title = stripTags(block.match(/class="title[^"]*"[^>]*>([\s\S]{0,400}?)<\/div>/)?.[1] ?? "");
+    const title = stripTags(
+      block.match(/class="title[^"]*"[^>]*>([\s\S]{0,400}?)<\/div>/)?.[1] ?? "",
+    );
     const snippet = stripTags(
       block.match(/class="snippet-description[^"]*"[^>]*>([\s\S]{0,800}?)<\/div>/)?.[1] ?? "",
     );
@@ -115,7 +118,12 @@ export async function webFetch(url: string, maxChars = 12000) {
     if (reader.ok) {
       const text = await reader.text();
       if (text.trim().length > 200) {
-        return { url, format: "markdown", truncated: text.length > maxChars, content: text.slice(0, maxChars) };
+        return {
+          url,
+          format: "markdown",
+          truncated: text.length > maxChars,
+          content: text.slice(0, maxChars),
+        };
       }
     }
   } catch {
@@ -131,5 +139,10 @@ export async function webFetch(url: string, maxChars = 12000) {
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ");
   const text = stripTags(body);
-  return { url, format: "text", truncated: text.length > maxChars, content: text.slice(0, maxChars) };
+  return {
+    url,
+    format: "text",
+    truncated: text.length > maxChars,
+    content: text.slice(0, maxChars),
+  };
 }

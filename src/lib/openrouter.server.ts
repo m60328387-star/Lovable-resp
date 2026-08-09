@@ -1,6 +1,6 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 
-export const DEFAULT_OPENROUTER_MODEL = "anthropic/claude-sonnet-4.6";
+export const DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-chat-v3.1";
 
 export function getOpenRouterModelId() {
   return process.env["OPENROUTER_MODEL"] || DEFAULT_OPENROUTER_MODEL;

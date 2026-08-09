@@ -90,7 +90,9 @@ function startServer(root) {
       }
       try {
         const body = await readFile(file);
-        res.writeHead(200, { "Content-Type": MIME[extname(file).toLowerCase()] || "application/octet-stream" });
+        res.writeHead(200, {
+          "Content-Type": MIME[extname(file).toLowerCase()] || "application/octet-stream",
+        });
         res.end(body);
       } catch {
         res.writeHead(404).end("not found");
@@ -175,7 +177,11 @@ async function main() {
       report.viewports.push({ ...vp, ...metrics, horizontalOverflow: overflow });
       if (vp.name === "desktop") report.performance = metrics;
 
-      const shot = await page.screenshot({ fullPage: vp.name === "desktop", type: "jpeg", quality: 62 });
+      const shot = await page.screenshot({
+        fullPage: vp.name === "desktop",
+        type: "jpeg",
+        quality: 62,
+      });
       const b64 = shot.toString("base64");
       const name = EXTERNAL ? "reference" : `shot-${vp.name}`;
       await writeFile(join(outDir, `${name}.txt`), b64.slice(0, MAX_SHOT), "utf8");
@@ -228,7 +234,9 @@ async function main() {
   }
 
   await writeFile(join(outDir, "audit.json"), JSON.stringify(report, null, 2), "utf8");
-  log(`score=${report.score} a11y=${report.accessibility.total} errors=${report.consoleErrors.length}`);
+  log(
+    `score=${report.score} a11y=${report.accessibility.total} errors=${report.consoleErrors.length}`,
+  );
   process.exit(0);
 }
 

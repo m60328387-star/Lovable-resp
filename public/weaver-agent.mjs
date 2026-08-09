@@ -27,10 +27,20 @@ if (!BASE || !TOKEN) {
 }
 
 const SKIP_DIRS = new Set([
-  "node_modules", ".git", "dist", "build", ".next", ".cache",
-  ".turbo", "coverage", "vendor", ".venv", "__pycache__",
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  ".next",
+  ".cache",
+  ".turbo",
+  "coverage",
+  "vendor",
+  ".venv",
+  "__pycache__",
 ]);
-const TEXT_EXT = /\.(html?|css|scss|js|mjs|cjs|jsx|ts|tsx|json|md|txt|svg|yml|yaml|env|toml|xml|csv|sql|sh|py)$/i;
+const TEXT_EXT =
+  /\.(html?|css|scss|js|mjs|cjs|jsx|ts|tsx|json|md|txt|svg|yml|yaml|env|toml|xml|csv|sql|sh|py)$/i;
 
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 
@@ -42,7 +52,11 @@ async function api(action, body) {
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`${action} → ${res.status} ${text.slice(0, 300)}`);
-  try { return JSON.parse(text); } catch { return {}; }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {};
+  }
 }
 
 /** يكتب ملفات المشروع في مجلد عمل معزول لكل مشروع. */
@@ -64,7 +78,11 @@ async function collect(root) {
   const out = [];
   async function walk(dir) {
     let entries = [];
-    try { entries = await readdir(dir, { withFileTypes: true }); } catch { return; }
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
     for (const e of entries) {
       if (e.name.startsWith(".") && e.name !== ".env.example") continue;
       const full = join(dir, e.name);
@@ -76,7 +94,10 @@ async function collect(root) {
       if (!TEXT_EXT.test(e.name)) continue;
       const info = await stat(full).catch(() => null);
       if (!info || info.size > MAX_FILE) continue;
-      out.push({ path: relative(root, full).split(sep).join("/"), content: await readFile(full, "utf8") });
+      out.push({
+        path: relative(root, full).split(sep).join("/"),
+        content: await readFile(full, "utf8"),
+      });
       if (out.length >= 80) return;
     }
   }
@@ -144,7 +165,9 @@ async function main() {
     try {
       const worked = await tick();
       if (!worked && ++beat % 15 === 0) {
-        await api("heartbeat", { meta: { node: process.version, platform: `${process.platform}/${process.arch}` } });
+        await api("heartbeat", {
+          meta: { node: process.version, platform: `${process.platform}/${process.arch}` },
+        });
       }
     } catch (err) {
       log("خطأ:", err.message);

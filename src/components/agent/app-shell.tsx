@@ -1,14 +1,28 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type ReactNode } from "react";
-import { Activity, Code2, LogOut, MessageSquarePlus, PanelLeft, ScrollText, Settings, ServerCog, Trash2, Workflow, PlugZap } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import {
+  Activity,
+  Code2,
+  Loader2,
+  LogOut,
+  MessageSquarePlus,
+  PanelLeft,
+  Rocket,
+  ScrollText,
+  Settings,
+  ServerCog,
+  Trash2,
+  Workflow,
+  PlugZap,
+} from "lucide-react";
 import { toast } from "sonner";
 import { LifecycleRail } from "@/components/agent/lifecycle-rail";
 import { createProject, deleteProject, listProjects } from "@/lib/projects.functions";
 import { exitSession } from "@/lib/auth.functions";
+import { deployPlatform } from "@/lib/platform.functions";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
-
 
 export function useProjects() {
   return useQuery({
@@ -29,6 +43,21 @@ export function AppShell({
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [showPush, setShowPush] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setCollapsed(window.localStorage.getItem("weaver-sidebar-collapsed") === "1");
+  }, []);
+
+  const toggleCollapsed = () => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      window.localStorage.setItem("weaver-sidebar-collapsed", next ? "1" : "0");
+      return next;
+    });
+  };
 
   const create = useMutation({
     mutationFn: (title: string) => createProject({ data: { title } }),
@@ -49,12 +78,25 @@ export function AppShell({
     onError: () => toast.error("تعذّر حذف المهمة"),
   });
 
+  const push = useMutation({
+    mutationFn: () => deployPlatform({ data: { action: "deploy" } }),
+    onSuccess: (result) => {
+      if (result.pending) toast.info("بدأ الدفع إلى كونتابو…");
+      else if (result.ok) toast.success("تم الاتصال بالخادم");
+      else toast.error("فشل الاتصال بكونتابو");
+      void queryClient.invalidateQueries({ queryKey: ["platform-deploys"] });
+      void queryClient.invalidateQueries({ queryKey: ["deploy-status"] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "تعذّر الدفع"),
+  });
+
   return (
     <div className="flex h-dvh overflow-hidden bg-background" dir="rtl">
       <aside
         className={cn(
-          "fixed inset-y-0 start-0 z-40 flex w-72 flex-col border-e bg-sidebar transition-transform lg:static lg:translate-x-0",
+          "fixed inset-y-0 start-0 z-40 flex w-72 max-w-[85vw] flex-col border-e bg-sidebar transition-transform lg:static lg:translate-x-0",
           open ? "translate-x-0" : "translate-x-full lg:translate-x-0",
+          collapsed && "lg:hidden",
         )}
       >
         <div className="flex items-center gap-2 border-b px-4 py-4">
@@ -125,7 +167,7 @@ export function AppShell({
           <LifecycleRail />
         </div>
 
-        <div className="flex items-center gap-2 border-t px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2 border-t px-4 py-3">
           <Link
             to="/health"
             aria-label="صحة النظام"
@@ -205,25 +247,67 @@ export function AppShell({
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center gap-2 border-b px-4 py-3 lg:hidden">
+        <header className="flex items-center gap-2 border-b px-4 py-2">
           <button
             type="button"
             aria-label="القائمة"
             onClick={() => setOpen(true)}
-            className="grid size-9 place-items-center rounded-lg border"
+            className="grid size-9 place-items-center rounded-lg border lg:hidden"
           >
             <PanelLeft className="size-4" />
           </button>
-          <span className="text-sm font-bold">Weaver</span>
+          <button
+            type="button"
+            aria-label={collapsed ? "إظهار الشريط الجانبي" : "إخفاء الشريط الجانبي"}
+            onClick={toggleCollapsed}
+            className="hidden size-9 place-items-center rounded-lg border lg:grid"
+          >
+            <PanelLeft className="size-4" />
+          </button>
+          <span className="truncate text-sm font-bold">Weaver</span>
+
+          <button
+            type="button"
+            onClick={() => setShowPush((v) => !v)}
+            className="ms-auto inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] font-semibold hover:bg-accent"
+          >
+            <Rocket className="size-3.5" /> Push
+          </button>
+          {showPush ? (
+            <div className="absolute start-1/2 top-12 z-50 w-72 -translate-x-1/2 rounded-xl border bg-card p-3 shadow-lg">
+              <p className="text-[12px] font-semibold">دفع Weaver إلى كونتابو</p>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                ينشر آخر نسخة من GitHub إلى الخادم 194.163.155.52.
+              </p>
+              <button
+                type="button"
+                disabled={push.isPending}
+                onClick={() => {
+                  setShowPush(false);
+                  push.mutate();
+                }}
+                className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-[12px] font-semibold text-primary-foreground disabled:opacity-50"
+              >
+                {push.isPending ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Rocket className="size-3.5" />
+                )}
+                دفع الآن
+              </button>
+            </div>
+          ) : null}
+
           <button
             type="button"
             onClick={() => create.mutate("محادثة جديدة")}
-            className="ms-auto grid size-9 place-items-center rounded-lg border"
+            className="grid size-9 shrink-0 place-items-center rounded-lg border"
             aria-label="مهمة جديدة"
           >
             <MessageSquarePlus className="size-4" />
           </button>
         </header>
+
         <main className="min-h-0 flex-1">{children}</main>
       </div>
     </div>

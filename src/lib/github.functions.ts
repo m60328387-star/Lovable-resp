@@ -58,7 +58,10 @@ export const pushWorkspaceToGithub = createServerFn({ method: "POST" })
       project_id: data.projectId,
       user_id: context.userId,
       kind: "git",
-      input: { command: `git push ${owner}/${repo}:${branch}`, reason: "رفع مساحة العمل إلى GitHub" },
+      input: {
+        command: `git push ${owner}/${repo}:${branch}`,
+        reason: "رفع مساحة العمل إلى GitHub",
+      },
       status: "passed",
       exit_code: 0,
       output: JSON.stringify({ ok: true, branch, files: pushed }),

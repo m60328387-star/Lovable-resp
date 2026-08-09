@@ -87,9 +87,7 @@ export async function targetInsert(
     const s = typeof v === "string" ? v : JSON.stringify(v);
     return `'${s.replace(/'/g, "''")}'`;
   };
-  const values = rows
-    .map((r) => `(${cols.map((c) => lit(r[c])).join(", ")})`)
-    .join(", ");
+  const values = rows.map((r) => `(${cols.map((c) => lit(r[c])).join(", ")})`).join(", ");
   const sql = `insert into "${safeTable}" (${cols.map((c) => `"${c}"`).join(", ")}) values ${values} returning *`;
   return (await localRpc("weaver_query", { p_schema: schema, p_sql: sql })) as unknown[];
 }

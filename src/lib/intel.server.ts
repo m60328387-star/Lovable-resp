@@ -10,13 +10,14 @@ import { routedCall, type RoutedContent, type TaskKind } from "@/lib/model-route
 
 export type IntelFile = { path: string; content: string; version: number };
 
-
-
-
 /** تجاوزات النماذج القادمة من لوحة إعدادات المنصة (بلا كود). */
 let modelOverrides: { fast?: string; reasoning?: string; vision?: string } = {};
 
-export function applyModelOverrides(next: { fastModel?: string; reasoningModel?: string; visionModel?: string }) {
+export function applyModelOverrides(next: {
+  fastModel?: string;
+  reasoningModel?: string;
+  visionModel?: string;
+}) {
   modelOverrides = {
     ...(next.fastModel ? { fast: next.fastModel } : {}),
     ...(next.reasoningModel ? { reasoning: next.reasoningModel } : {}),
@@ -26,15 +27,19 @@ export function applyModelOverrides(next: { fastModel?: string; reasoningModel?:
 
 /** النموذج المساعد السريع للتلخيص/الاستخراج (رخيص وسريع). */
 export function fastModelId() {
-  return modelOverrides.fast || process.env["WEAVER_FAST_MODEL"] || "google/gemini-2.5-flash";
+  return modelOverrides.fast || process.env["WEAVER_FAST_MODEL"] || "google/gemini-flash-latest";
 }
 /** نموذج التحليل العميق (تفكير) عند الحاجة لقرارات معمارية. */
 export function reasoningModelId() {
-  return modelOverrides.reasoning || process.env["WEAVER_REASONING_MODEL"] || "anthropic/claude-sonnet-4.6";
+  return (
+    modelOverrides.reasoning ||
+    process.env["WEAVER_REASONING_MODEL"] ||
+    "deepseek/deepseek-chat-v3.1"
+  );
 }
 /** نموذج الرؤية لتحليل الصور ولقطات الشاشة. */
 export function visionModelId() {
-  return modelOverrides.vision || process.env["WEAVER_VISION_MODEL"] || "google/gemini-2.5-flash";
+  return modelOverrides.vision || process.env["WEAVER_VISION_MODEL"] || "google/gemini-pro-latest";
 }
 
 type ChatContent = RoutedContent;
@@ -101,7 +106,9 @@ export function outlineOf(path: string, content: string) {
     const text = raw.trim();
     if (!text) return;
     if (/\.(html?|htm)$/i.test(path)) {
-      const section = text.match(/<(section|header|footer|nav|main|article|aside)\b[^>]*id="([^"]+)"/i);
+      const section = text.match(
+        /<(section|header|footer|nav|main|article|aside)\b[^>]*id="([^"]+)"/i,
+      );
       if (section) return push(line, "section", `${section[1]}#${section[2]}`);
       const heading = text.match(/<h([1-6])[^>]*>(.*?)<\/h\1>/i);
       if (heading) return push(line, `h${heading[1]}`, heading[2]!.replace(/<[^>]+>/g, ""));
@@ -120,7 +127,9 @@ export function outlineOf(path: string, content: string) {
       if (fn) return push(line, "function", fn[1]!);
       const cls = text.match(/^(?:export\s+)?class\s+([\w$]+)/);
       if (cls) return push(line, "class", cls[1]!);
-      const cst = text.match(/^(?:export\s+)?(?:const|let)\s+([\w$]+)\s*=\s*(?:async\s*)?(?:\(|function)/);
+      const cst = text.match(
+        /^(?:export\s+)?(?:const|let)\s+([\w$]+)\s*=\s*(?:async\s*)?(?:\(|function)/,
+      );
       if (cst) return push(line, "function", cst[1]!);
       return;
     }
@@ -213,7 +222,8 @@ export function embeddingProvider(): EmbeddingProvider {
 
 async function embed(texts: string[]): Promise<number[][]> {
   const provider = embeddingProvider();
-  if (!provider) throw new Error("لا يوجد مفتاح تضمين (OPENAI_API_KEY أو JINA_API_KEY أو VOYAGE_API_KEY)");
+  if (!provider)
+    throw new Error("لا يوجد مفتاح تضمين (OPENAI_API_KEY أو JINA_API_KEY أو VOYAGE_API_KEY)");
   if (provider === "openai") {
     const res = await fetch("https://api.openai.com/v1/embeddings", {
       method: "POST",
@@ -223,7 +233,8 @@ async function embed(texts: string[]): Promise<number[][]> {
       },
       body: JSON.stringify({ model: "text-embedding-3-small", input: texts }),
     });
-    if (!res.ok) throw new Error(`OpenAI embeddings ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    if (!res.ok)
+      throw new Error(`OpenAI embeddings ${res.status}: ${(await res.text()).slice(0, 300)}`);
     const json = (await res.json()) as { data: Array<{ embedding: number[] }> };
     return json.data.map((d) => d.embedding);
   }
@@ -236,7 +247,8 @@ async function embed(texts: string[]): Promise<number[][]> {
       },
       body: JSON.stringify({ model: "jina-embeddings-v3", input: texts }),
     });
-    if (!res.ok) throw new Error(`Jina embeddings ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    if (!res.ok)
+      throw new Error(`Jina embeddings ${res.status}: ${(await res.text()).slice(0, 300)}`);
     const json = (await res.json()) as { data: Array<{ embedding: number[] }> };
     return json.data.map((d) => d.embedding);
   }
@@ -248,7 +260,8 @@ async function embed(texts: string[]): Promise<number[][]> {
     },
     body: JSON.stringify({ model: "voyage-3-lite", input: texts }),
   });
-  if (!res.ok) throw new Error(`Voyage embeddings ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok)
+    throw new Error(`Voyage embeddings ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const json = (await res.json()) as { data: Array<{ embedding: number[] }> };
   return json.data.map((d) => d.embedding);
 }
@@ -278,7 +291,10 @@ function chunkFile(content: string, size = 60) {
   const lines = content.split("\n");
   const chunks: Array<{ start: number; end: number; text: string }> = [];
   for (let i = 0; i < lines.length; i += size) {
-    const slice = lines.slice(i, i + size).join("\n").trim();
+    const slice = lines
+      .slice(i, i + size)
+      .join("\n")
+      .trim();
     if (slice) chunks.push({ start: i + 1, end: Math.min(lines.length, i + size), text: slice });
   }
   return chunks;

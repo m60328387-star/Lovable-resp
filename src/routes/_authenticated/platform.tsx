@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import {
@@ -9,6 +9,7 @@ import {
   FileCode,
   GitBranch,
   Loader2,
+  MessageSquarePlus,
   RefreshCw,
   Rocket,
   Save,
@@ -24,6 +25,7 @@ import {
   activatePromptVersion,
   approvePlatformChange,
   exportBackup,
+  getDeployStatus,
   listPlatformErrors,
   restoreBackup,
   deployPlatform,
@@ -41,6 +43,8 @@ import {
   type PlatformChangeView,
 } from "@/lib/platform.functions";
 import { MODEL_OPTIONS } from "@/lib/model-settings";
+import { MODE_STORAGE_KEY } from "@/lib/modes";
+import { createProject } from "@/lib/projects.functions";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/platform")({
@@ -49,10 +53,14 @@ export const Route = createFileRoute("/_authenticated/platform")({
       { title: "تطوير المنصة — Weaver" },
       {
         name: "description",
-        content: "عدّل كود Weaver نفسه بمراجعة Diff، اعتمد التغييرات، انشر وتراجع، واضبط الإعدادات والتعليمات بلا كود.",
+        content:
+          "عدّل كود Weaver نفسه بمراجعة Diff، اعتمد التغييرات، انشر وتراجع، واضبط الإعدادات والتعليمات بلا كود.",
       },
       { property: "og:title", content: "تطوير المنصة — Weaver" },
-      { property: "og:description", content: "استقلال كامل: تعديل ونشر وتراجع داخل Weaver بدون مبرمج." },
+      {
+        property: "og:description",
+        content: "استقلال كامل: تعديل ونشر وتراجع داخل Weaver بدون مبرمج.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
@@ -83,7 +91,10 @@ function DiffView({ before, after }: { before: string; after: string }) {
         <span className="text-emerald-600">+{stats.added}</span>
         <span className="text-rose-600">−{stats.removed}</span>
       </div>
-      <pre className="max-h-[420px] overflow-auto bg-card font-mono text-[11.5px] leading-5" dir="ltr">
+      <pre
+        className="max-h-[420px] overflow-auto bg-card font-mono text-[11.5px] leading-5"
+        dir="ltr"
+      >
         {lines.map((line, index) => (
           <div
             key={index}
@@ -129,7 +140,11 @@ function FilesTab() {
   const propose = useMutation({
     mutationFn: () =>
       proposePlatformChange({
-        data: { title: title || `تعديل ${path}`, description: "", files: [{ path: path!, after: draft }] },
+        data: {
+          title: title || `تعديل ${path}`,
+          description: "",
+          files: [{ path: path!, after: draft }],
+        },
       }),
     onSuccess: () => {
       toast.success("تم إنشاء التغيير — راجعه في تبويب التغييرات");
@@ -219,7 +234,11 @@ function FilesTab() {
                 onClick={() => propose.mutate()}
                 className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-[12.5px] font-semibold text-primary-foreground disabled:opacity-50"
               >
-                {propose.isPending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                {propose.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Save className="size-4" />
+                )}
                 أرسل للمراجعة
               </button>
             </div>
@@ -238,7 +257,8 @@ function ChangeCard({ change }: { change: PlatformChangeView }) {
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: ["platform-changes"] });
 
   const approve = useMutation({
-    mutationFn: () => approvePlatformChange({ data: { changeId: change.id, confirmSensitive: true } }),
+    mutationFn: () =>
+      approvePlatformChange({ data: { changeId: change.id, confirmSensitive: true } }),
     onSuccess: () => {
       toast.success("تم اعتماد التغيير وكتابته");
       invalidate();
@@ -278,7 +298,9 @@ function ChangeCard({ change }: { change: PlatformChangeView }) {
             {change.files.map((f) => f.path).join(" · ")}
           </p>
         </div>
-        <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-semibold", badge)}>{change.status}</span>
+        <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-semibold", badge)}>
+          {change.status}
+        </span>
       </div>
 
       {change.error ? <p className="mt-2 text-[12px] text-rose-600">{change.error}</p> : null}
@@ -302,7 +324,11 @@ function ChangeCard({ change }: { change: PlatformChangeView }) {
               }}
               className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[12px] font-semibold text-primary-foreground disabled:opacity-50"
             >
-              {approve.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+              {approve.isPending ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Check className="size-3.5" />
+              )}
               اعتماد
             </button>
             <button
@@ -343,7 +369,10 @@ function ChangeCard({ change }: { change: PlatformChangeView }) {
 }
 
 function ChangesTab() {
-  const changes = useQuery({ queryKey: ["platform-changes"], queryFn: () => listPlatformChanges() });
+  const changes = useQuery({
+    queryKey: ["platform-changes"],
+    queryFn: () => listPlatformChanges(),
+  });
   if (changes.isLoading) return <p className="text-[13px] text-muted-foreground">جارٍ التحميل…</p>;
   if ((changes.data ?? []).length === 0) {
     return <p className="text-[13px] text-muted-foreground">لا توجد تغييرات بعد.</p>;
@@ -359,34 +388,148 @@ function ChangesTab() {
 
 function DeployTab() {
   const queryClient = useQueryClient();
-  const deploys = useQuery({ queryKey: ["platform-deploys"], queryFn: () => listDeploys() });
+  const status = useQuery({
+    queryKey: ["deploy-status"],
+    queryFn: () => getDeployStatus(),
+    refetchInterval: 10_000,
+  });
+  const deploys = useQuery({
+    queryKey: ["platform-deploys"],
+    queryFn: () => listDeploys(),
+    refetchInterval: (query) =>
+      query.state.data?.some((item) => item.status === "running") ? 5_000 : false,
+  });
   const run = useMutation({
     mutationFn: (action: "deploy" | "rollback") => deployPlatform({ data: { action } }),
     onSuccess: (result) => {
-      if (result.ok) toast.success("تم تنفيذ الأمر على الخادم");
-      else toast.error("فشل النشر — راجع السجل");
+      if (result.pending) toast.info("بدأ الدفع إلى كونتابو — ستظهر النتيجة النهائية تلقائياً");
+      else if (result.ok) toast.success("تم الاتصال بالخادم");
+      else toast.error("فشل الاتصال بكونتابو — راجع السجل");
       void queryClient.invalidateQueries({ queryKey: ["platform-deploys"] });
+      void queryClient.invalidateQueries({ queryKey: ["deploy-status"] });
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "تعذّر النشر"),
+    onError: (error) => toast.error(error instanceof Error ? error.message : "تعذّر الدفع"),
   });
+
+  const hook = status.data?.hook;
+  const head = status.data?.head;
+  const last = status.data?.last;
 
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border bg-card p-4 shadow-soft">
-        <h2 className="text-[15px] font-bold">نشر وتراجع بضغطة</h2>
+        <h2 className="text-[15px] font-bold">Push to Contabo</h2>
         <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
-          يشغّل النشر على الخادم عبر خطّاف <span className="font-mono">deploy/deploy-hook.mjs</span> ثم يعيد بناء
-          الحاويات ويتحقق من صحة الموقع. التراجع يعيد آخر إصدار ناجح.
+          اضغط الزر لدفع أحدث نسخة من Weaver إلى الخادم على كونتابو (194.163.155.52). النشر يجري عبر
+          خطّاف آمن داخل الشبكة، ويعيد بناء الحاويات وتحقق من صحة الموقع.
         </p>
-        <div className="mt-3 flex flex-wrap gap-2">
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-xl border bg-muted/40 p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              خطّاف كونتابو
+            </p>
+            <div className="mt-1 flex items-center gap-2 text-[12.5px]">
+              <span
+                className={cn(
+                  "size-2 rounded-full",
+                  hook?.configured
+                    ? hook?.reachable
+                      ? "bg-emerald-500"
+                      : "bg-rose-500"
+                    : "bg-amber-500",
+                )}
+              />
+              {hook?.configured ? (hook?.reachable ? "متصل" : "غير متصل") : "غير مضبوط"}
+            </div>
+            {hook?.error ? (
+              <p className="mt-1 text-[11px] text-rose-600" dir="ltr">
+                {hook.error}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="rounded-xl border bg-muted/40 p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              GitHub
+            </p>
+            <div className="mt-1 flex items-center gap-2 text-[12.5px]">
+              <span
+                className={cn(
+                  "size-2 rounded-full",
+                  head?.configured
+                    ? head?.error
+                      ? "bg-amber-500"
+                      : "bg-emerald-500"
+                    : "bg-rose-500",
+                )}
+              />
+              {head?.configured ? (head?.error ? "خطأ في القراءة" : "متصل") : "غير مضبوط"}
+            </div>
+            {head?.sha ? (
+              <a
+                href={head.url}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-1 block truncate text-[11px] text-primary hover:underline"
+                dir="ltr"
+              >
+                {head.sha} — {head.message}
+              </a>
+            ) : null}
+            {head?.error ? <p className="mt-1 text-[11px] text-rose-600">{head.error}</p> : null}
+          </div>
+
+          <div className="rounded-xl border bg-muted/40 p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              آخر نشر
+            </p>
+            <p className="mt-1 text-[12.5px] font-semibold">
+              {last
+                ? last.status === "success"
+                  ? "ناجح"
+                  : last.status === "running"
+                    ? "قيد التنفيذ"
+                    : "فاشل"
+                : "—"}
+            </p>
+            {last ? (
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {new Date(last.createdAt).toLocaleString("ar")}
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        {!hook?.configured ? (
+          <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-[12px] text-amber-800">
+            لم يُضبط رابط النشر على هذا النسخة. تأكد من تعيين متغيرات البيئة PLATFORM_DEPLOY_URL و
+            EXECUTOR_TOKEN على الخادم.
+          </div>
+        ) : null}
+        {head?.configured && !head?.error && hook?.configured && !hook?.reachable ? (
+          <div className="mt-3 rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-[12px] text-rose-800">
+            خطّاف كونتابو لا يستجيب. ربما لم يُشغّل الخدمة أو يحجبها جدار ناري. تحقق من تشغيل{" "}
+            <span className="font-mono" dir="ltr">
+              node deploy/deploy-hook.mjs
+            </span>{" "}
+            على الخادم.
+          </div>
+        ) : null}
+
+        <div className="mt-4 flex flex-wrap gap-2">
           <button
             type="button"
-            disabled={run.isPending}
+            disabled={run.isPending || !hook?.configured}
             onClick={() => run.mutate("deploy")}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-[13px] font-semibold text-primary-foreground disabled:opacity-50"
           >
-            {run.isPending ? <Loader2 className="size-4 animate-spin" /> : <Rocket className="size-4" />}
-            انشر التحديث
+            {run.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Rocket className="size-4" />
+            )}
+            دفع إلى كونتابو
           </button>
           <button
             type="button"
@@ -401,7 +544,10 @@ function DeployTab() {
           </button>
           <button
             type="button"
-            onClick={() => void queryClient.invalidateQueries({ queryKey: ["platform-deploys"] })}
+            onClick={() => {
+              void queryClient.invalidateQueries({ queryKey: ["platform-deploys"] });
+              void queryClient.invalidateQueries({ queryKey: ["deploy-status"] });
+            }}
             className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-[13px] font-semibold hover:bg-accent"
           >
             <RefreshCw className="size-4" /> تحديث
@@ -414,14 +560,18 @@ function DeployTab() {
           <div key={d.id} className="rounded-xl border bg-card p-3">
             <div className="flex items-center justify-between gap-2">
               <span className="text-[12.5px] font-semibold">
-                {d.kind === "rollback" ? "تراجع" : "نشر"} — {d.status === "success" ? "ناجح" : "فاشل"}
+                {d.kind === "rollback" ? "تراجع" : "دفع"} —{" "}
+                {d.status === "success" ? "ناجح" : d.status === "running" ? "قيد التنفيذ" : "فاشل"}
               </span>
               <span className="font-mono text-[11px] text-muted-foreground">
                 {new Date(d.createdAt).toLocaleString("ar")}
               </span>
             </div>
             {d.log ? (
-              <pre className="mt-2 max-h-40 overflow-auto rounded-lg bg-muted/50 p-2 font-mono text-[11px]" dir="ltr">
+              <pre
+                className="mt-2 max-h-40 overflow-auto rounded-lg bg-muted/50 p-2 font-mono text-[11px]"
+                dir="ltr"
+              >
                 {d.log}
               </pre>
             ) : null}
@@ -434,9 +584,13 @@ function DeployTab() {
 
 function SettingsTab() {
   const queryClient = useQueryClient();
-  const settings = useQuery({ queryKey: ["platform-settings"], queryFn: () => getPlatformSettings() });
+  const settings = useQuery({
+    queryKey: ["platform-settings"],
+    queryFn: () => getPlatformSettings(),
+  });
   const [draft, setDraft] = useState<Record<string, string | number> | null>(null);
-  const value = draft ?? (settings.data as unknown as Record<string, string | number> | undefined) ?? null;
+  const value =
+    draft ?? (settings.data as unknown as Record<string, string | number> | undefined) ?? null;
 
   const save = useMutation({
     mutationFn: () => savePlatformSettings({ data: value as never }),
@@ -545,7 +699,8 @@ function PromptTab() {
   const [content, setContent] = useState("");
 
   const save = useMutation({
-    mutationFn: (activate: boolean) => savePromptVersion({ data: { label: label || "نسخة جديدة", content, activate } }),
+    mutationFn: (activate: boolean) =>
+      savePromptVersion({ data: { label: label || "نسخة جديدة", content, activate } }),
     onSuccess: () => {
       toast.success("تم حفظ النسخة");
       setLabel("");
@@ -687,7 +842,11 @@ function BackupTab() {
             disabled={doExport.isPending}
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-3.5 py-2 text-[12.5px] font-semibold text-primary-foreground disabled:opacity-60"
           >
-            {doExport.isPending ? <Loader2 className="size-4 animate-spin" /> : <DatabaseBackup className="size-4" />}
+            {doExport.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <DatabaseBackup className="size-4" />
+            )}
             تصدير نسخة
           </button>
         </div>
@@ -708,7 +867,11 @@ function BackupTab() {
           disabled={doRestore.isPending || payload.trim().length < 2}
           className="mt-2 inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-[12.5px] font-semibold disabled:opacity-60"
         >
-          {doRestore.isPending ? <Loader2 className="size-4 animate-spin" /> : <Undo2 className="size-4" />}
+          {doRestore.isPending ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Undo2 className="size-4" />
+          )}
           استعادة
         </button>
       </section>
@@ -730,13 +893,23 @@ function BackupTab() {
         ) : (
           <ul className="mt-3 space-y-2">
             {jobErrors.map((e) => (
-              <li key={e.id} className="rounded-xl border border-destructive/30 bg-destructive/5 p-3">
+              <li
+                key={e.id}
+                className="rounded-xl border border-destructive/30 bg-destructive/5 p-3"
+              >
                 <div className="flex items-center gap-2 text-[12px] font-semibold text-destructive">
                   <AlertTriangle className="size-3.5" />
                   مهمة فاشلة
-                  <span className="font-normal text-muted-foreground">{new Date(e.createdAt).toLocaleString("ar")}</span>
+                  <span className="font-normal text-muted-foreground">
+                    {new Date(e.createdAt).toLocaleString("ar")}
+                  </span>
                 </div>
-                <pre dir="ltr" className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap text-[11.5px]">{e.message}</pre>
+                <pre
+                  dir="ltr"
+                  className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap text-[11.5px]"
+                >
+                  {e.message}
+                </pre>
               </li>
             ))}
             {deployErrors.map((e) => (
@@ -744,9 +917,16 @@ function BackupTab() {
                 <div className="flex items-center gap-2 text-[12px] font-semibold">
                   <Rocket className="size-3.5" />
                   نشر فاشل
-                  <span className="font-normal text-muted-foreground">{new Date(e.createdAt).toLocaleString("ar")}</span>
+                  <span className="font-normal text-muted-foreground">
+                    {new Date(e.createdAt).toLocaleString("ar")}
+                  </span>
                 </div>
-                <pre dir="ltr" className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap text-[11.5px]">{e.message}</pre>
+                <pre
+                  dir="ltr"
+                  className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap text-[11.5px]"
+                >
+                  {e.message}
+                </pre>
               </li>
             ))}
           </ul>
@@ -758,15 +938,43 @@ function BackupTab() {
 
 function PlatformPage() {
   const [tab, setTab] = useState<TabKey>("files");
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  const openSelfChat = useMutation({
+    mutationFn: () => createProject({ data: { title: "تطوير Weaver" } }),
+    onSuccess: (project) => {
+      if (typeof window !== "undefined") window.localStorage.setItem(MODE_STORAGE_KEY, "platform");
+      void queryClient.invalidateQueries({ queryKey: ["projects"] });
+      if (project) void navigate({ to: "/c/$threadId", params: { threadId: project.id } });
+    },
+    onError: () => toast.error("تعذّر فتح دردشة التطوير"),
+  });
 
   return (
     <AppShell>
       <div className="mx-auto w-full max-w-6xl px-4 py-6">
-        <header>
-          <h1 className="text-xl font-black">تطوير المنصة</h1>
-          <p className="mt-1 text-[13px] text-muted-foreground">
-            عدّل Weaver نفسه: راجع الفرق قبل التطبيق، اعتمد، انشر، وتراجع — كل شيء من هنا بدون مبرمج.
-          </p>
+        <header className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-black">تطوير المنصة</h1>
+            <p className="mt-1 text-[13px] text-muted-foreground">
+              عدّل Weaver نفسه: راجع الفرق قبل التطبيق، اعتمد، انشر، وتراجع — كل شيء من هنا بدون
+              مبرمج.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => openSelfChat.mutate()}
+            disabled={openSelfChat.isPending}
+            className="inline-flex items-center gap-2 rounded-xl border border-primary/30 bg-primary px-3.5 py-2 text-[12.5px] font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {openSelfChat.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <MessageSquarePlus className="size-4" />
+            )}
+            دردشة تعديل Weaver
+          </button>
         </header>
 
         <nav className="mt-4 flex flex-wrap gap-2">
@@ -777,7 +985,9 @@ function PlatformPage() {
               onClick={() => setTab(t.key)}
               className={cn(
                 "inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-[12.5px] font-semibold transition-colors",
-                tab === t.key ? "border-primary bg-primary text-primary-foreground" : "hover:bg-accent",
+                tab === t.key
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "hover:bg-accent",
               )}
             >
               <t.icon className="size-4" />

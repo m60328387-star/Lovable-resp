@@ -159,7 +159,9 @@ export async function callConnector(input: ConnectorCallInput) {
 
   let key: string | null = null;
   if (connector.secret) {
-    key = input.projectId ? await readSecret(input.projectId, connector.secret) : (process.env[connector.secret] ?? null);
+    key = input.projectId
+      ? await readSecret(input.projectId, connector.secret)
+      : (process.env[connector.secret] ?? null);
     if (!key) {
       return {
         ok: false,

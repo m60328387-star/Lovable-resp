@@ -1,9 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { convertToModelMessages, generateText, stepCountIs, type UIMessage } from "ai";
-import { createOpenRouterProvider, getOpenRouterModelId } from "@/lib/openrouter.server";
+import { getOpenRouterModelId } from "@/lib/openrouter.server";
+import { resolveBuildModel, noteOpenRouterUnavailable } from "@/lib/build-provider.server";
 import { getSql } from "@/lib/db";
 import { makeLocalSupabase } from "@/lib/local-supabase";
 import { estimateCostUsd } from "@/lib/pricing";
+import { withTokenBudget } from "@/lib/token-budget.server";
 import {
   buildWeaverSystem,
   buildWeaverToolset,
@@ -41,9 +43,13 @@ export const Route = createFileRoute("/api/public/worker/tick")({
           return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
         }
 
-        const key = process.env["OPENROUTER_API_KEY"];
-        if (!key) {
-          return Response.json({ ok: false, error: "missing_openrouter_key" }, { status: 500 });
+        const hasAnyProvider = Boolean(
+          process.env["OPENROUTER_API_KEY"] ||
+          process.env["GEMINI_API_KEY"] ||
+          process.env["GROQ_API_KEY"],
+        );
+        if (!hasAnyProvider) {
+          return Response.json({ ok: false, error: "missing_model_provider_key" }, { status: 500 });
         }
 
         await ensureAgentJobs();
@@ -56,7 +62,7 @@ export const Route = createFileRoute("/api/public/worker/tick")({
         const projectId = job.project_id;
         const origin = new URL(request.url).origin;
         const modelId = job.model ?? getOpenRouterModelId();
-        const openrouter = createOpenRouterProvider(key, origin);
+        const routed = resolveBuildModel(modelId, origin);
         const skills = Array.isArray(job.skills) ? (job.skills as string[]) : [];
         const startedAt = Date.now();
 
@@ -80,9 +86,12 @@ export const Route = createFileRoute("/api/public/worker/tick")({
                 ORDER BY created_at DESC LIMIT 1
               `,
             ]);
-            lifecycle.hasTasks = Number((taskRows[0] as { count?: number } | undefined)?.count ?? 0) > 0;
-            lifecycle.hasFiles = Number((fileRows[0] as { count?: number } | undefined)?.count ?? 0) > 0;
-            lifecycle.published = (projectRows[0] as { published?: boolean } | undefined)?.published === true;
+            lifecycle.hasTasks =
+              Number((taskRows[0] as { count?: number } | undefined)?.count ?? 0) > 0;
+            lifecycle.hasFiles =
+              Number((fileRows[0] as { count?: number } | undefined)?.count ?? 0) > 0;
+            lifecycle.published =
+              (projectRows[0] as { published?: boolean } | undefined)?.published === true;
             lifecycle.checksPassed =
               (checkRows[0] as { status?: string } | undefined)?.status === "passed";
           } catch (error) {
@@ -115,21 +124,20 @@ export const Route = createFileRoute("/api/public/worker/tick")({
             },
           );
 
-          const result = await generateText({
-            model: openrouter(modelId),
-            system: buildWeaverSystem(skills, job.mode) + statusPrompt(lifecycle, buildIntent),
-            messages: await convertToModelMessages((job.messages ?? []) as UIMessage[]),
-            tools,
-            stopWhen: [
-              stepCountIs(MAX_STEPS),
-              () => Date.now() - startedAt > TIME_BUDGET_MS * 3,
-            ],
-            maxOutputTokens: Number(process.env["OPENROUTER_MAX_TOKENS"] ?? 64000),
-            onStepFinish: () => {
-              steps += 1;
-              void setJobPhase(job.id, `خطوة ${steps} من ${MAX_STEPS}`, steps);
-            },
-          });
+          const result = await withTokenBudget(async (maxOutputTokens) =>
+            generateText({
+              model: routed.model,
+              system: buildWeaverSystem(skills, job.mode) + statusPrompt(lifecycle, buildIntent),
+              messages: await convertToModelMessages((job.messages ?? []) as UIMessage[]),
+              tools,
+              stopWhen: [stepCountIs(MAX_STEPS), () => Date.now() - startedAt > TIME_BUDGET_MS * 3],
+              maxOutputTokens,
+              onStepFinish: () => {
+                steps += 1;
+                void setJobPhase(job.id, `خطوة ${steps} من ${MAX_STEPS}`, steps);
+              },
+            }),
+          );
 
           // تسجيل الاستهلاك
           try {
@@ -197,7 +205,9 @@ export const Route = createFileRoute("/api/public/worker/tick")({
             status: incomplete ? "error" : "done",
             phase: incomplete ? "توقف قبل الاكتمال بعد استنفاد المحاولات" : "اكتمل",
             resultText: result.text,
-            error: incomplete ? "لم تجتز المهمة بوابات الملفات والفحص والنشر ضمن حد المحاولات." : null,
+            error: incomplete
+              ? "لم تجتز المهمة بوابات الملفات والفحص والنشر ضمن حد المحاولات."
+              : null,
             steps,
           });
           await logJobEvent({
@@ -209,11 +219,20 @@ export const Route = createFileRoute("/api/public/worker/tick")({
             durationMs: Date.now() - startedAt,
             attempt: job.attempts,
           });
-          return Response.json({ ok: !incomplete, jobId: job.id, steps, done: !incomplete, incomplete });
+          return Response.json({
+            ok: !incomplete,
+            jobId: job.id,
+            steps,
+            done: !incomplete,
+            incomplete,
+          });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           console.error("[weaver:worker]", message);
+          // فشل الرصيد يحوّل الجولة التالية تلقائياً إلى Gemini/Groq بدل تكرار نفس الفشل.
+          noteOpenRouterUnavailable(error);
           const retry = job.attempts < job.max_attempts;
+
           if (retry) {
             await requeueForContinuation(
               job,

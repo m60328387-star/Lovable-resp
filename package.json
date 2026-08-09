@@ -3,6 +3,7 @@
   "private": true,
   "sideEffects": false,
   "type": "module",
+  "weaverRelease": "2026-08-13-push-to-contabo",
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",

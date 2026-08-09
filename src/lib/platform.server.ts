@@ -51,6 +51,8 @@ export async function ensurePlatformTables(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       finished_at TIMESTAMPTZ
     );
+    ALTER TABLE public.platform_deploys
+      ADD COLUMN IF NOT EXISTS external_job_id TEXT;
   `);
   ensured = true;
 }
@@ -86,12 +88,13 @@ export type PlatformSettings = {
 };
 
 export const DEFAULT_PLATFORM_SETTINGS: PlatformSettings = {
-  primaryModel: "anthropic/claude-sonnet-4.6",
-  fastModel: "google/gemini-2.5-flash",
-  reasoningModel: "anthropic/claude-sonnet-4.6",
-  visionModel: "google/gemini-2.5-pro",
+  primaryModel: "deepseek/deepseek-chat-v3.1",
+  fastModel: "google/gemini-flash-latest",
+  reasoningModel: "deepseek/deepseek-chat-v3.1",
+  visionModel: "google/gemini-pro-latest",
+
   maxSteps: 120,
-  maxTokens: 64000,
+  maxTokens: 16000,
   maxRetries: 3,
   brandName: "Weaver",
   brandTagline: "ENGINEERING AGENT",
@@ -102,7 +105,8 @@ export async function loadPlatformSettings(): Promise<PlatformSettings> {
   try {
     await ensurePlatformTables();
     const sql = getSql();
-    const rows = await sql`SELECT value FROM public.platform_settings WHERE key = 'general' LIMIT 1`;
+    const rows =
+      await sql`SELECT value FROM public.platform_settings WHERE key = 'general' LIMIT 1`;
     const stored = (rows[0]?.["value"] ?? {}) as Partial<PlatformSettings>;
     return { ...DEFAULT_PLATFORM_SETTINGS, ...stored };
   } catch {
@@ -140,13 +144,22 @@ export async function activePromptOverride(): Promise<string> {
 
 // ============ النشر والتراجع ============
 
-export type DeployResult = { ok: boolean; log: string; status: number };
+export type DeployResult = {
+  ok: boolean;
+  log: string;
+  status: number;
+  pending?: boolean;
+  jobId?: string;
+};
 
 /**
  * ينفّذ النشر على الخادم عبر خطّاف النشر (webhook) الذي يشغّل deploy/deploy.sh.
  * يُضبط برابط PLATFORM_DEPLOY_URL ورمز EXECUTOR_TOKEN على الـVPS.
  */
-export async function runDeployHook(action: "deploy" | "rollback", ref?: string): Promise<DeployResult> {
+export async function runDeployHook(
+  action: "deploy" | "rollback",
+  ref?: string,
+): Promise<DeployResult> {
   const url = process.env["PLATFORM_DEPLOY_URL"];
   const token = process.env["EXECUTOR_TOKEN"];
   if (!url) {
@@ -159,14 +172,31 @@ export async function runDeployHook(action: "deploy" | "rollback", ref?: string)
   try {
     const res = await fetch(url, {
       method: "POST",
+      signal: AbortSignal.timeout(15_000),
       headers: {
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({ action, ref: ref ?? null }),
     });
-    const log = await res.text();
-    return { ok: res.ok, status: res.status, log: log.slice(0, 20000) };
+    const response = await res.text();
+    if (res.status === 202) {
+      let jobId = "";
+      try {
+        const payload = JSON.parse(response) as { jobId?: unknown };
+        jobId = typeof payload.jobId === "string" ? payload.jobId : "";
+      } catch {
+        // Keep the raw response below when an older hook returns non-JSON.
+      }
+      return {
+        ok: true,
+        status: res.status,
+        pending: true,
+        jobId,
+        log: `تم قبول مهمة ${action === "rollback" ? "التراجع" : "النشر"} وستستمر في الخلفية${jobId ? ` (المهمة: ${jobId})` : ""}. سيُعاد تشغيل Weaver تلقائياً عند اكتمالها.`,
+      };
+    }
+    return { ok: res.ok, status: res.status, log: response.slice(0, 20000) };
   } catch (error) {
     return { ok: false, status: 0, log: error instanceof Error ? error.message : String(error) };
   }
@@ -180,8 +210,125 @@ export async function recordDeploy(
 ): Promise<void> {
   await ensurePlatformTables();
   const sql = getSql();
+  const status = result.pending ? "running" : result.ok ? "success" : "failed";
+  const finishedAt = result.pending ? null : new Date();
   await sql`
-    INSERT INTO public.platform_deploys (user_id, status, kind, log, change_id, finished_at)
-    VALUES (${userId}, ${result.ok ? "success" : "failed"}, ${kind}, ${result.log}, ${changeId ?? null}, now())
+    INSERT INTO public.platform_deploys
+      (user_id, status, kind, log, change_id, finished_at, external_job_id)
+    VALUES
+      (${userId}, ${status}, ${kind}, ${result.log}, ${changeId ?? null}, ${finishedAt}, ${result.jobId ?? null})
   `;
+}
+
+/** يطابق المهام المقبولة مع نتيجتها الحقيقية بعد عودة التطبيق من إعادة التشغيل. */
+export async function syncPendingDeploys(): Promise<void> {
+  await ensurePlatformTables();
+  const deployUrl = process.env["PLATFORM_DEPLOY_URL"];
+  const token = process.env["EXECUTOR_TOKEN"];
+  if (!deployUrl) return;
+
+  const sql = getSql();
+  const pending = await sql`
+    SELECT id, external_job_id
+    FROM public.platform_deploys
+    WHERE status = 'running' AND external_job_id IS NOT NULL
+    ORDER BY created_at ASC
+    LIMIT 10
+  `;
+
+  const statusBase = deployUrl.replace(/\/deploy\/?$/, "/status/");
+  await Promise.all(
+    pending.map(async (row) => {
+      const jobId = String(row["external_job_id"] ?? "");
+      if (!jobId) return;
+      try {
+        const response = await fetch(`${statusBase}${encodeURIComponent(jobId)}`, {
+          signal: AbortSignal.timeout(5_000),
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!response.ok) return;
+        const state = (await response.json()) as {
+          status?: unknown;
+          log?: unknown;
+          code?: unknown;
+        };
+        const status =
+          state.status === "success" ? "success" : state.status === "failed" ? "failed" : "running";
+        const log = typeof state.log === "string" ? state.log.slice(-20_000) : "";
+        if (status === "running") {
+          await sql`UPDATE public.platform_deploys SET log = ${log || "النشر قيد التنفيذ…"} WHERE id = ${row["id"]}`;
+          return;
+        }
+        await sql`
+        UPDATE public.platform_deploys
+        SET status = ${status}, log = ${log}, finished_at = now()
+        WHERE id = ${row["id"]}
+      `;
+      } catch {
+        // قد يكون الخطاف غير متاح لثوانٍ أثناء استبدال الحاويات؛ تبقى المهمة قيد التنفيذ.
+      }
+    }),
+  );
+}
+
+/** تحقق سريع من حالة خطّاف النشر على كونتابو. */
+export async function pingDeployHook(): Promise<{
+  configured: boolean;
+  reachable: boolean;
+  error?: string;
+}> {
+  const url = process.env["PLATFORM_DEPLOY_URL"];
+  const token = process.env["EXECUTOR_TOKEN"];
+  if (!url) return { configured: false, reachable: false };
+  try {
+    const statusUrl = url.replace(/\/deploy\/?$/, "/status/ping");
+    const res = await fetch(statusUrl, {
+      method: "GET",
+      signal: AbortSignal.timeout(5_000),
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    return { configured: true, reachable: res.ok };
+  } catch (error) {
+    return {
+      configured: true,
+      reachable: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/** يجلب آخر إصدار من GitHub لعرضه كمؤشر مزامنة. */
+export async function getGithubHead(): Promise<{
+  configured: boolean;
+  sha?: string | undefined;
+  message?: string | undefined;
+  url?: string | undefined;
+  error?: string | undefined;
+}> {
+  const repo = process.env["GITHUB_REPO_URL"];
+  const token = process.env["GITHUB_TOKEN"];
+  if (!repo || !token) return { configured: false };
+  try {
+    const { parseRepo } = await import("@/lib/github.server");
+    const { gh } = await import("@/lib/github.server");
+    const { owner, repo: name } = parseRepo(repo);
+    const res = await gh(token, `/repos/${owner}/${name}/commits/${encodeURIComponent("HEAD")}`);
+    if (!res.ok) throw new Error(`GitHub ${res.status}`);
+    const data = (await res.json()) as {
+      sha?: string;
+      commit?: { message?: string };
+      html_url?: string;
+    };
+    return {
+      configured: true,
+      sha: data.sha?.slice(0, 7),
+      message: data.commit?.message?.split("\n")[0],
+      url: data.html_url,
+    };
+  } catch (error) {
+    return {
+      configured: true,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }

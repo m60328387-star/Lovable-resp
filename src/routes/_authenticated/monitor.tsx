@@ -1,6 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, Database, RefreshCcw, ScrollText, Server } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Database,
+  RefreshCcw,
+  ScrollText,
+  Server,
+} from "lucide-react";
 import { getMonitorSnapshot } from "@/lib/monitor.functions";
 import { AuditPanel } from "@/components/agent/audit-panel";
 import { cn } from "@/lib/utils";
@@ -18,7 +25,8 @@ export const Route = createFileRoute("/_authenticated/monitor")({
       { property: "og:title", content: "لوحة المراقبة والسجلات | Weaver" },
       {
         property: "og:description",
-        content: "تنبيهات فورية عند نقص VITE_SUPABASE_* أو WEAVER_WORKER_TOKEN أو انقطاع قاعدة البيانات.",
+        content:
+          "تنبيهات فورية عند نقص VITE_SUPABASE_* أو WEAVER_WORKER_TOKEN أو انقطاع قاعدة البيانات.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -93,7 +101,9 @@ function MonitorPage() {
             <StatCard
               icon={Server}
               label="آخر نبضة للعامل"
-              value={data.workerLastSeen ? new Date(data.workerLastSeen).toLocaleString("ar") : "لا يوجد"}
+              value={
+                data.workerLastSeen ? new Date(data.workerLastSeen).toLocaleString("ar") : "لا يوجد"
+              }
               tone={data.workerLastSeen ? "ok" : "warn"}
             />
             <StatCard
@@ -176,7 +186,9 @@ function MonitorPage() {
                     key={event.id}
                     className={cn(
                       "flex gap-2 rounded px-2 py-1",
-                      event.ok === false ? "bg-destructive/10 text-destructive" : "hover:bg-surface",
+                      event.ok === false
+                        ? "bg-destructive/10 text-destructive"
+                        : "hover:bg-surface",
                     )}
                   >
                     <span className="shrink-0 text-muted-foreground">

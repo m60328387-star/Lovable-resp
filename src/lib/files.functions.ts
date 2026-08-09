@@ -18,14 +18,14 @@ export const listFileVersions = createServerFn({ method: "POST" })
       ORDER BY version DESC
       LIMIT 30
     `;
-    return (rows as unknown as Array<{ id: string; version: number; content: string; created_at: string }>).map(
-      (row) => ({
-        id: row.id,
-        version: row.version,
-        bytes: row.content.length,
-        createdAt: row.created_at,
-      }),
-    );
+    return (
+      rows as unknown as Array<{ id: string; version: number; content: string; created_at: string }>
+    ).map((row) => ({
+      id: row.id,
+      version: row.version,
+      bytes: row.content.length,
+      createdAt: row.created_at,
+    }));
   });
 
 /** يرجع بملف إلى إصدار سابق (مع حفظ الحالة الحالية كإصدار جديد قبل الاستبدال). */
@@ -33,7 +33,11 @@ export const restoreFileVersion = createServerFn({ method: "POST" })
   .middleware([requireWeaverAuth])
   .inputValidator((input: unknown) =>
     z
-      .object({ projectId: z.string().uuid(), path: z.string().min(1), versionId: z.string().uuid() })
+      .object({
+        projectId: z.string().uuid(),
+        path: z.string().min(1),
+        versionId: z.string().uuid(),
+      })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
@@ -54,7 +58,11 @@ export const restoreFileVersion = createServerFn({ method: "POST" })
     `;
 
     if (current) {
-      const { id, content: currentContent, version: currentVersion } = current as unknown as {
+      const {
+        id,
+        content: currentContent,
+        version: currentVersion,
+      } = current as unknown as {
         id: string;
         content: string;
         version: number;

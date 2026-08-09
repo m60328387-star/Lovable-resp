@@ -8,7 +8,9 @@ export const listSchedules = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { data, error } = await context.supabase
       .from("scheduled_jobs")
-      .select("id, project_id, name, command, interval_minutes, enabled, next_run_at, last_run_at, last_status")
+      .select(
+        "id, project_id, name, command, interval_minutes, enabled, next_run_at, last_run_at, last_status",
+      )
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
     return data ?? [];

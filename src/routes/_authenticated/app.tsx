@@ -74,7 +74,6 @@ function Workspace() {
     return term ? list.filter((p) => p.title.toLowerCase().includes(term)) : list;
   }, [projects.data, query]);
 
-
   const create = useMutation({
     mutationFn: (title: string) => createProject({ data: { title } }),
     onError: () => toast.error("تعذّر بدء المهمة"),
@@ -239,7 +238,6 @@ function Workspace() {
           </section>
 
           <section className="mt-12">
-
             <h2 className="flex items-center gap-2 text-[15px] font-bold">
               <LayoutTemplate className="size-4 text-primary" />
               قوالب انطلاق جاهزة
@@ -269,8 +267,6 @@ function Workspace() {
               ))}
             </div>
           </section>
-
-
 
           <div className="mt-14 grid gap-3 sm:grid-cols-3">
             {PILLARS.map((pillar) => (

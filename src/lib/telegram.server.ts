@@ -10,13 +10,19 @@ async function call(token: string, method: string, payload: Record<string, unkno
   });
   const data = (await response.json()) as { ok: boolean; result?: unknown; description?: string };
   if (!response.ok || !data.ok) {
-    throw new Error(`Telegram ${method} فشل [${response.status}]: ${data.description ?? "خطأ غير معروف"}`);
+    throw new Error(
+      `Telegram ${method} فشل [${response.status}]: ${data.description ?? "خطأ غير معروف"}`,
+    );
   }
   return data.result;
 }
 
 export function tgGetMe(token: string) {
-  return call(token, "getMe", {}) as Promise<{ id: number; username?: string; first_name?: string }>;
+  return call(token, "getMe", {}) as Promise<{
+    id: number;
+    username?: string;
+    first_name?: string;
+  }>;
 }
 
 export function tgSetWebhook(token: string, url: string, secret: string) {

@@ -102,10 +102,13 @@ function HealthPage() {
             <div>
               <h1 className="text-2xl font-bold tracking-tight">صحة النظام</h1>
               <p className="mt-1.5 text-[13px] text-muted-foreground">
-                نظرة واحدة على المنفّذات والطابور والأخطاء والاستهلاك — تُحدَّث تلقائياً كل ٢٠ ثانية.
+                نظرة واحدة على المنفّذات والطابور والأخطاء والاستهلاك — تُحدَّث تلقائياً كل ٢٠
+                ثانية.
               </p>
             </div>
-            {health.isFetching && <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />}
+            {health.isFetching && (
+              <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+            )}
           </header>
 
           {!data ? (
@@ -164,7 +167,10 @@ function HealthPage() {
                           <CircleX className="size-3.5 text-muted-foreground" />
                         )}
                         <span className="text-[13px] font-semibold">{executor.name}</span>
-                        <span className="truncate font-mono text-[10.5px] text-muted-foreground" dir="ltr">
+                        <span
+                          className="truncate font-mono text-[10.5px] text-muted-foreground"
+                          dir="ltr"
+                        >
                           {executor.baseUrl}
                         </span>
                         <span className="ms-auto text-[11px] text-muted-foreground">
@@ -180,7 +186,9 @@ function HealthPage() {
 
               <Card icon={CircleX} title="آخر الإخفاقات">
                 {data.failures.length === 0 ? (
-                  <p className="text-[12.5px] text-muted-foreground">لا توجد أوامر فاشلة خلال ٢٤ ساعة.</p>
+                  <p className="text-[12.5px] text-muted-foreground">
+                    لا توجد أوامر فاشلة خلال ٢٤ ساعة.
+                  </p>
                 ) : (
                   <ul className="space-y-2">
                     {data.failures.map((failure) => (
@@ -237,8 +245,8 @@ function HealthPage() {
               <Card icon={Globe} title="المشاريع والمواقع المنشورة">
                 <p className="text-[12.5px] text-muted-foreground">
                   {data.projects.total} مشروع · {data.projects.published} منشور ·{" "}
-                  {data.usage.requests} طلب نموذج خلال ٣٠ يوماً ({data.usage.tokens.toLocaleString("en")}{" "}
-                  توكن).
+                  {data.usage.requests} طلب نموذج خلال ٣٠ يوماً (
+                  {data.usage.tokens.toLocaleString("en")} توكن).
                 </p>
                 <ul className="mt-3 space-y-2">
                   {data.projects.recent.map((project) => (

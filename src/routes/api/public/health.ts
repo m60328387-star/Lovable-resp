@@ -12,7 +12,7 @@ export const Route = createFileRoute("/api/public/health")({
         const required = [
           "DATABASE_URL",
           "SESSION_SECRET",
-          "OPENROUTER_API_KEY",
+          // مفاتيح النماذج تُفحص عبر providers أدناه (يكفي أي مزوّد واحد)
           "WEAVER_WORKER_TOKEN",
           "WEAVER_PASSCODE",
           "WEAVER_OWNER_EMAIL",
@@ -28,20 +28,28 @@ export const Route = createFileRoute("/api/public/health")({
         try {
           await Promise.race([
             Promise.resolve(getSql()`SELECT 1`),
-            new Promise((_, reject) =>
-              setTimeout(() => reject(new Error("db timeout")), 6000),
-            ),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("db timeout")), 6000)),
           ]);
           db = true;
         } catch (error) {
           dbError = error instanceof Error ? error.message : String(error);
         }
 
+        const providers = {
+          openrouter: Boolean((process.env["OPENROUTER_API_KEY"] ?? "").trim()),
+          gemini: Boolean((process.env["GEMINI_API_KEY"] ?? "").trim()),
+          groq: Boolean((process.env["GROQ_API_KEY"] ?? "").trim()),
+        };
+        const noProvider = !providers.openrouter && !providers.gemini && !providers.groq;
+        if (noProvider) missing.push("MODEL_PROVIDER(none_configured)");
+
         const ok = db && missing.length === 0;
         if (!ok) {
           try {
             const { alertOnCriticalEnv } = await import("@/lib/alerts.server");
-            await alertOnCriticalEnv(db ? [] : [`تعذّر الاتصال بقاعدة البيانات: ${dbError ?? "غير معروف"}`]);
+            await alertOnCriticalEnv(
+              db ? [] : [`تعذّر الاتصال بقاعدة البيانات: ${dbError ?? "غير معروف"}`],
+            );
           } catch {
             /* التنبيه لا يُفشل فحص الصحة */
           }
@@ -52,6 +60,8 @@ export const Route = createFileRoute("/api/public/health")({
             db,
             dbError,
             missingEnv: missing,
+            providers,
+            model: process.env["OPENROUTER_MODEL"] ?? null,
             uptimeSec: Math.round(process.uptime?.() ?? 0),
             at: new Date().toISOString(),
           },

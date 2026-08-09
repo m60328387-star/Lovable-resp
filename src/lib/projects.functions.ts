@@ -26,7 +26,12 @@ export const listProjects = createServerFn({ method: "GET" })
       WHERE user_id = ${context.userId}
       ORDER BY updated_at DESC
     `;
-    return rows as unknown as Array<{ id: string; title: string; status: string; updated_at: string }>;
+    return rows as unknown as Array<{
+      id: string;
+      title: string;
+      status: string;
+      updated_at: string;
+    }>;
   });
 
 export const createProject = createServerFn({ method: "POST" })
@@ -119,7 +124,8 @@ export const getConversation = createServerFn({ method: "POST" })
     ]);
 
     return {
-      project: (projectRows as unknown as Array<{ id: string; title: string; status: string }>)[0] ?? null,
+      project:
+        (projectRows as unknown as Array<{ id: string; title: string; status: string }>)[0] ?? null,
       messages: (messagesRows as unknown as Array<{ parts: Json }>).map((row) =>
         // Legacy rows were written double-encoded (a JSON string inside jsonb).
         typeof row.parts === "string" ? (JSON.parse(row.parts) as Json) : row.parts,
@@ -192,7 +198,8 @@ export const saveSpec = createServerFn({ method: "POST" })
       WHERE project_id = ${data.projectId}
       ORDER BY version DESC LIMIT 1
     `;
-    const nextVersion = ((latest[0] as unknown as { version: number } | undefined)?.version ?? 0) + 1;
+    const nextVersion =
+      ((latest[0] as unknown as { version: number } | undefined)?.version ?? 0) + 1;
 
     await sql`
       INSERT INTO public.specs (project_id, user_id, version, data)
@@ -298,7 +305,12 @@ export const getWorkspace = createServerFn({ method: "POST" })
       `,
     ]);
 
-    const files = filesRows as unknown as Array<{ path: string; version: number; content: string; updated_at: string }>;
+    const files = filesRows as unknown as Array<{
+      path: string;
+      version: number;
+      content: string;
+      updated_at: string;
+    }>;
     const runs = runsRows as unknown as Array<{
       id: string;
       kind: string;

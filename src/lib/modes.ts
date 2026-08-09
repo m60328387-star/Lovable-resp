@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 export const MODE_STORAGE_KEY = "weaver:mode";
 
-export type ModeId = "build" | "research" | "advise" | "bot";
+export type ModeId = "build" | "research" | "advise" | "bot" | "platform";
 
 export type Mode = {
   id: ModeId;
@@ -60,6 +60,18 @@ export const MODES: Mode[] = [
   <script src="https://telegram.org/js/telegram-web-app.js"></script>، واستخدم Telegram.WebApp.ready() و themeParams
   و MainButton، ثم انشره بـ publish_site وأعطِ المستخدم الرابط ليضعه في BotFather كزر Web App.
 - بعد الربط اذكر للمستخدم بوضوح: اسم البوت، رابط الـWebhook، وكيف يختبره.`,
+  },
+  {
+    id: "platform",
+    name: "تطوير Weaver",
+    icon: "Wrench",
+    desc: "دردشة تعديل المنصة نفسها: اقرأ كود Weaver، عدّله، ثم انشره على الخادم.",
+    prompt: `وضع التشغيل الحالي: **تطوير المنصة (Weaver نفسه)**.
+- كل طلب في هذا الوضع يخصّ كود منصة Weaver نفسها، وليس مشروعاً للمستخدم. ممنوع تماماً استخدام write_file أو publish_site أو build_task_graph.
+- الترتيب الإلزامي: self_list_files لتحديد الملفات المرشّحة → self_read_file لقراءة الملف كاملاً → تعديل دقيق محدود النطاق → self_write_file لتطبيقه مباشرة.
+- استخدم propose_platform_change فقط إذا طلب المالك معاينة Diff قبل التطبيق.
+- بعد التعديل، إن طلب المالك التفعيل على الخادم فاستخدم أداة deploy_platform ثم اذكر نتيجة الفحص الصحي.
+- اذكر دائماً في نهاية ردّك: الملفات التي عُدِّلت، وسبب كل تعديل، وكيف يتحقّق المالك منه.`,
   },
 ];
 

@@ -1,13 +1,22 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, ArrowRight, Clock, Cpu, Github, Puzzle, Server, Sparkles, Wallet } from "lucide-react";
+import {
+  Activity,
+  ArrowRight,
+  Clock,
+  Cpu,
+  Github,
+  Puzzle,
+  Server,
+  Sparkles,
+  Wallet,
+} from "lucide-react";
 import { AppShell } from "@/components/agent/app-shell";
 import { ConnectorsCatalog } from "@/components/agent/connectors-catalog";
 import { CustomSkillsManager } from "@/components/agent/custom-skills-manager";
 
 import { ExecutorsManager } from "@/components/agent/executors-manager";
 import { SchedulesManager } from "@/components/agent/schedules-manager";
-
 
 import { DEFAULT_MODEL, MODEL_OPTIONS, useModelSetting } from "@/lib/model-settings";
 import { SKILLS, useSkills } from "@/lib/skills";
@@ -99,7 +108,10 @@ function SettingsPage() {
                   <span className="mt-0.5 block text-[11.5px] text-muted-foreground">
                     {option.note}
                   </span>
-                  <span className="mt-1 block font-mono text-[10px] text-muted-foreground" dir="ltr">
+                  <span
+                    className="mt-1 block font-mono text-[10px] text-muted-foreground"
+                    dir="ltr"
+                  >
                     {option.id}
                   </span>
                 </button>
@@ -132,7 +144,9 @@ function SettingsPage() {
                     onClick={() => toggle(skill.id)}
                     className={cn(
                       "rounded-xl border p-3 text-start transition-colors",
-                      active ? "border-primary/50 bg-accent" : "hover:border-primary/30 hover:bg-surface",
+                      active
+                        ? "border-primary/50 bg-accent"
+                        : "hover:border-primary/30 hover:bg-surface",
                     )}
                   >
                     <span className="flex items-center gap-2 text-[13px] font-semibold">
@@ -161,7 +175,6 @@ function SettingsPage() {
           </Section>
 
           <ConnectorsCatalog />
-
 
           <Section
             icon={Server}
@@ -193,10 +206,6 @@ function SettingsPage() {
             </Link>
           </Section>
 
-
-
-
-
           <Section
             icon={Wallet}
             title="الاستهلاك"
@@ -211,7 +220,10 @@ function SettingsPage() {
                   label="التوكينز"
                   value={(usage.data?.totalTokens ?? 0).toLocaleString("en-US")}
                 />
-                <Stat label="التكلفة التقديرية" value={`$${(usage.data?.costUsd ?? 0).toFixed(4)}`} />
+                <Stat
+                  label="التكلفة التقديرية"
+                  value={`$${(usage.data?.costUsd ?? 0).toFixed(4)}`}
+                />
               </div>
             )}
           </Section>

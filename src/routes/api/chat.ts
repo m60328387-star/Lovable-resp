@@ -1,7 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { convertToModelMessages, generateText, streamText, stepCountIs, tool, type UIMessage } from "ai";
+import {
+  convertToModelMessages,
+  generateText,
+  streamText,
+  stepCountIs,
+  tool,
+  type UIMessage,
+} from "ai";
 import { z } from "zod";
 import { createOpenRouterProvider, getOpenRouterModelId } from "@/lib/openrouter.server";
+import { resolveBuildModel, noteOpenRouterUnavailable } from "@/lib/build-provider.server";
 import { authenticateRequest, type AuthedContext } from "@/lib/chat-auth.server";
 import type { Json } from "@/integrations/supabase/types";
 
@@ -21,6 +29,16 @@ import { skillPrompt } from "@/lib/skills";
 import { modePrompt } from "@/lib/modes";
 import { webSearch, webFetch } from "@/lib/web.server";
 import {
+  runtimeBrowserCheck,
+  runtimeConfigured,
+  runtimeDevLogs,
+  runtimeDevStart,
+  runtimeDevStatus,
+  runtimeDevStop,
+  runtimeExec,
+  runtimeSync,
+} from "@/lib/runtime.server";
+import {
   applyModelOverrides,
   buildSemanticIndex,
   codeSearch,
@@ -33,8 +51,10 @@ import {
   semanticSearch,
   visionModelId,
 } from "@/lib/intel.server";
+import { buildBrandKit } from "@/lib/brand-kit";
 import { buildSeoKit } from "@/lib/seo-kit";
 import { reviewScreenshot } from "@/lib/design-critic.server";
+import { resolveMaxOutputTokens, noteTokenBudgetError } from "@/lib/token-budget.server";
 import {
   tgGetMe,
   tgSetWebhook,
@@ -42,6 +62,70 @@ import {
   tgSendMessage,
   webhookSecret,
 } from "@/lib/telegram.server";
+
+/** مسارات تعود لكود منصة Weaver نفسها وليست لمساحة عمل المشروع. */
+function isPlatformPath(path: string) {
+  const clean = path.replace(/^\.?\//, "");
+  return (
+    /^(src|deploy|supabase|public|scripts)\//i.test(clean) ||
+    /^(package\.json|vite\.config\.ts|tsconfig\.json|eslint\.config\.js|components\.json|AGENTS\.md)$/i.test(
+      clean,
+    )
+  );
+}
+
+/** يطبّق تعديلات جراحية على ملف من كود المنصة عبر GitHub بدل مساحة عمل المشروع. */
+async function editPlatformFile(
+  path: string,
+  edits: Array<{ find: string; replace: string }>,
+  summary: string,
+) {
+  const clean = path.replace(/^\.?\//, "");
+  const repo = getSelfRepo();
+  if (!repo) {
+    return { ok: false, error: "التطوير الذاتي غير مهيّأ (GITHUB_TOKEN / GITHUB_REPO_URL مفقود)." };
+  }
+
+  const current = await selfRead(repo, clean);
+  if (!current.found) {
+    return { ok: false, error: `الملف ${clean} غير موجود في مستودع المنصة.` };
+  }
+  let content = current.content;
+  const applied: string[] = [];
+  const failed: string[] = [];
+  for (const edit of edits) {
+    const index = content.indexOf(edit.find);
+    if (index === -1) {
+      failed.push(edit.find.slice(0, 60));
+      continue;
+    }
+    if (content.indexOf(edit.find, index + 1) !== -1) {
+      failed.push(`(غير فريد) ${edit.find.slice(0, 60)}`);
+      continue;
+    }
+    content = content.slice(0, index) + edit.replace + content.slice(index + edit.find.length);
+    applied.push(edit.find.slice(0, 60));
+  }
+  if (applied.length === 0) {
+    return { ok: false, path: clean, target: "platform", error: "لم يُطابق أي مقطع.", failed };
+  }
+  try {
+    const result = await selfWrite(repo, clean, content, summary || `Weaver: تعديل ${clean}`);
+    return {
+      ok: true,
+      target: "platform",
+      path: clean,
+      commit: result.commit,
+      branch: result.branch,
+      appliedCount: applied.length,
+      failed,
+      summary,
+      note: "طُبّق على كود المنصة (تطوير ذاتي). استخدم deploy_platform لتفعيله على الخادم.",
+    };
+  } catch (error) {
+    return { ok: false, path: clean, target: "platform", error: (error as Error).message };
+  }
+}
 
 const MEMORY_RULE = `
 
@@ -65,8 +149,12 @@ const SYSTEM_PROMPT = `أنت "Weaver" — وكيل هندسي (Engineering Agen
 6. EXECUTION — نفّذ عبر حلقة: Observe → Think → Act → Observe. اكتب المخرجات الفعلية في مساحة عمل المشروع عبر write_file، واقرأ ما كتبته عبر read_file و list_files قبل التعديل. حدّث حالة كل مهمة عبر update_task.
 7. VERIFICATION — بعد كتابة الملفات نفّذ run_checks فعلياً (تحليل نحوي وفحص مراجع وسلامة HTML/CSS/JSON). إن ظهرت أخطاء أصلحها بـ write_file أو بأداة fix_errors (تُصلح الأخطاء والتحذيرات تلقائياً) ثم أعد run_checks حتى ينجح.
 7ب. التنفيذ الحقيقي — run_command يشغّل أوامر shell فعلياً على خادم المستخدم (منفّذ Contabo) ويعيد المخرجات ورمز الخروج، ويكتب أي ملفات عدّلها الأمر إلى المشروع تلقائياً. استخدمه لـ npm install / npm run build / الاختبارات / git. إن عاد بحالة queued فلا منفّذ متصل: أخبر المستخدم أن يشغّل منفّذه من الإعدادات ولا تدّعِ أن الأمر نجح. إن عاد running تابعه بـ run_status. لا تعلن نجاح البناء إلا برمز خروج 0.
+7د. الإصلاح الذاتي المغلق (إلزامي للمشاريع داخل الحاوية) — بعد كل دفعة كتابة نفّذ auto_repair: يزامن ويشغّل ويقرأ أخطاء البناء وأخطاء المتصفح الحقيقية معاً. أصلح ما يعيده ثم أعده حتى clean=true. قبل النشر نفّذ browser_check (يفتح Chromium حقيقياً على المعاينة، يرصد أخطاء الكونسول/الشبكة/الوصولية/التمرير الأفقي ويحفظ لقطات لـ design_review) ولا تنشر قبل ok=true.
+7ج. حاوية التنفيذ والمعاينة الحيّة — للمشاريع الحقيقية (Vite/React/Node) استخدم أداة shell لتشغيل الأوامر داخل حاوية المشروع المعزولة (تُزامَن الملفات تلقائياً قبل كل أمر)، ثم أداة dev_server بـ action=start لتشغيل خادم التطوير والحصول على رابط المعاينة الحيّة. عند أي فشل: اقرأ dev_server بـ action=logs، أصلح الملفات، وأعد التشغيل — كرّر حتى تختفي الأخطاء. إن عادت الأداة بأن بيئة التنفيذ غير مفعّلة فاستخدم run_command بدلاً منها ولا تتوقف.
 
 8. REVIEW & REGRESSION — راجع كمراجع مستقل، ثم اذكر اختبارات الانحدار.
+7د. الهوية البصرية أولاً (إلزامي) — في أي مشروع واجهة، قبل كتابة أول ملف HTML نفّذ brand_kit مرة واحدة، ثم اربط brand/tokens.css و brand/head.html في كل صفحة، واستعمل متغيّرات --color-* و --space-* و --radius-* فقط. ممنوع منعاً باتاً كتابة لون hex أو rgb مباشر داخل HTML أو CSS الصفحات بعد تنفيذ brand_kit. إن طلب المستخدم لوناً أو طابعاً محدداً مرّره في baseColor/personality.
+
 8ب. بوابة الجودة البصرية (إلزامية قبل أي نشر) — بعد نجاح run_checks:
    (أ) نفّذ visual_audit على index.html (متصفح حقيقي + axe + ثلاثة أحجام شاشة).
    (ب) أصلح كل انتهاك serious/critical وكل خطأ كونسول وكل تمرير أفقي، ثم أعد visual_audit حتى score ≥ 80.
@@ -102,6 +190,17 @@ const SYSTEM_PROMPT = `أنت "Weaver" — وكيل هندسي (Engineering Agen
 - إذا كان الطلب سؤالاً بسيطاً أو محادثة عامة، أجب مباشرة بدون أدوات.
 - استخدم Markdown منظماً: عناوين، قوائم، جداول، وكتل كود.
 
+لغة المحتوى (قاعدة صارمة):
+- كل نص مرئي في الموقع يُكتب بلغة طلب المستخدم — والافتراضي العربية الفصحى. ممنوع منعاً باتاً كتابة أي محتوى بالصينية أو أي لغة أخرى لم يطلبها المستخدم، حتى في التعليقات وأسماء الأقسام وbadges وplaceholders.
+- أسماء الملفات والأصناف (classes) والمعرّفات بالإنجليزية اللاتينية فقط.
+- إن ظهرت أي حروف غير عربية/لاتينية في ملف كتبته، أعد كتابتها فوراً بالعربية قبل المتابعة.
+
+حجم الملفات (اختصار مع نفس الجودة — إلزامي):
+- index.html يجب أن يبقى مختصراً: هدف 200-450 سطراً وحد أقصى 800 سطر (~60000 حرف). إن كبر، انقل الأقسام الزائدة إلى صفحات مستقلة (about.html، services.html…) بدل تضخيم الصفحة الرئيسية.
+- ممنوع <style> أو <script> ضخم داخل HTML: كل CSS في styles.css وكل JS في script.js. ممنوع تكرار نفس البطاقة/القسم عشرات المرات في HTML — ولّد العناصر المتكررة (منتجات، مقالات، شهادات) من مصفوفة بيانات في script.js عبر قالب واحد.
+- استخدم مكوّنات CSS قابلة لإعادة الاستخدام (.card, .btn, .grid) بدل أنماط مكرّرة، وأيقونات SVG مشتركة عبر <use> بدل لصق نفس المسار مراراً.
+- الاختصار لا يعني نقص الجودة: نفس الأقسام والهوية والوصولية، لكن بكود أقل تكراراً.
+
 معيار الجودة الإلزامي لأي موقع تبنيه (لا تسليم دونه):
 - الهيكل: index.html في جذر مساحة العمل + styles.css + script.js عند الحاجة، بروابط نسبية فقط. يبدأ index.html بـ <!DOCTYPE html> ويحتوي <html lang="ar" dir="rtl"> و<meta charset="utf-8"> و<meta name="viewport" content="width=device-width, initial-scale=1"> وعنوان ووصف meta.
 - CSS إلزامي وحقيقي: ممنوع تسليم صفحة بوسوم HTML عارية بلا تنسيق. اكتب styles.css كاملاً (لا يقل عن 250 سطراً لموقع تعريفي) يتضمن: متغيّرات CSS للألوان والمسافات، reset، خط عربي من Google Fonts عبر <link> (مثل Tajawal أو IBM Plex Sans Arabic)، تخطيطات Grid/Flex، حاوية بعرض أقصى، مسافات متناسقة، حالات hover وانتقالات، ونقاط توقّف responsive عند 1024px و768px و480px.
@@ -127,7 +226,8 @@ const SYSTEM_PROMPT = `أنت "Weaver" — وكيل هندسي (Engineering Agen
 بناء المواقع الكبيرة والمعقّدة:
 - المواقع متعددة الصفحات مسموحة ومطلوبة: index.html + about.html + services.html + contact.html… مع هيدر وفوتر متطابقين وروابط نسبية تعمل.
 - افصل الأنماط: styles.css أساسي + ملفات مثل components.css وpages.css عند الكِبَر، واربطها كلها في <head>.
-- الملفات الكبيرة: اكتب الملف على دفعات — write_file للجزء الأول ثم append_file للأجزاء التالية، حتى لا يُقتطع أي ملف. ممنوع تسليم ملف مبتور.
+- اكتب كل ملفات الدفعة الواحدة (index.html + styles.css + script.js ...) في نداء write_files واحد بدل تكرار write_file — هذا يقلّص زمن البناء إلى النصف.
+- الملفات الكبيرة: اكتب الملف كاملاً بـ write_file في نداء واحد ما دام تحت 400000 حرف؛ استخدم append_file فقط لما يتجاوز ذلك. ممنوع تسليم ملف مبتور.
 - استخدم delete_file لإزالة أي ملف زائد أو خاطئ بدل تركه.
 - ابنِ على مراحل: هيكل الصفحات أولاً، ثم الأنماط، ثم التفاعل، ثم المحتوى الحقيقي، مع update_task بعد كل مرحلة و run_checks قبل النشر.
 
@@ -185,8 +285,6 @@ const SYSTEM_PROMPT = `أنت "Weaver" — وكيل هندسي (Engineering Agen
 - في وضع البناء ممنوع إنهاء الجولة بردّ تفسيري مثل «أحتاج مراجعة» أو «سأكمل لاحقاً». واصل استدعاء الأدوات ما دام هناك ملف أو فحص أو نشر متبقٍ.
 - إذا أعادت أي أداة حقل error، لا تتوقف: اذكر الخطأ بإيجاز وجرّب بديلاً أو تابع بقية الخطة.`;
 
-
-
 type PlanningAuth = { supabase: AuthedContext["supabase"]; userId: string } | null;
 
 /** أدوات التخطيط — تكتب فعلياً في جداول specs و tasks حتى تبقى الخطة ظاهرة في لوحة المشروع. */
@@ -226,7 +324,8 @@ function planningTools(auth: PlanningAuth, projectId: string | null) {
   });
 
   const taskGraphTool = tool({
-    description: "ينتج رسم المهام (Task Graph) مع الاعتماديات ومعايير القبول ويحفظه في لوحة المشروع.",
+    description:
+      "ينتج رسم المهام (Task Graph) مع الاعتماديات ومعايير القبول ويحفظه في لوحة المشروع.",
     inputSchema: z.object({
       tasks: z.array(
         z.object({
@@ -282,7 +381,6 @@ function planningTools(auth: PlanningAuth, projectId: string | null) {
 
   return { write_spec: specTool, build_task_graph: taskGraphTool, update_task: updateTaskTool };
 }
-
 
 type WorkspaceSupabase = AuthedContext["supabase"];
 
@@ -342,6 +440,66 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null) {
     return { supabase: auth.supabase, userId: auth.userId, projectId };
   };
 
+  /** الكتابة الفعلية لملف واحد — يشاركها write_file و write_files. */
+  async function writeOne(path: string, content: string, summary: string) {
+    // لا نرفض الملفات الكبيرة: الرفض كان يضيّع محتوى كتبه النموذج فعلاً (يظهر في الدردشة ولا يُحفظ).
+    if (content.length > 400_000) {
+      return {
+        ok: false,
+        path,
+        error: "الملف أكبر من 400000 حرف. اكتب الجزء الأول ثم أكمل عبر append_file.",
+      };
+    }
+    const { supabase, userId, projectId: pid } = guard();
+    const { data: existing } = await supabase
+      .from("files")
+      .select("id, version, content")
+      .eq("project_id", pid)
+      .eq("path", path)
+      .maybeSingle();
+
+    if (existing) {
+      // نسخة الإصدار السابق تُحفظ في الخلفية حتى لا تضيف زمناً لكل كتابة
+      void supabase
+        .from("file_versions")
+        .insert({
+          project_id: pid,
+          user_id: userId,
+          path,
+          content: existing.content,
+          version: existing.version,
+        })
+        .then(
+          () => undefined,
+          () => undefined,
+        );
+      // قفل تفاؤلي: لا نكتب إن غيّر نداء متوازٍ نفس الملف بيننا
+      const { data: updated, error } = await supabase
+        .from("files")
+        .update({ content, version: existing.version + 1 })
+        .eq("id", existing.id)
+        .eq("version", existing.version)
+        .select("version")
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      if (!updated) {
+        return {
+          ok: false,
+          path,
+          error:
+            "تم تعديل الملف من نداء آخر أثناء الكتابة. اقرأه من جديد بـ read_file ثم أعد التعديل.",
+        };
+      }
+      return { ok: true, path, version: updated.version, bytes: content.length, summary };
+    }
+
+    const { error } = await supabase
+      .from("files")
+      .insert({ project_id: pid, user_id: userId, path, content });
+    if (error) throw new Error(error.message);
+    return { ok: true, path, version: 1, bytes: content.length, summary };
+  }
+
   const writeFile = tool({
     description:
       "يكتب أو يحدّث ملفاً فعلياً داخل مساحة عمل المشروع المحفوظة. استخدمه لكل مخرج ملموس.",
@@ -350,48 +508,54 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null) {
       content: z.string().describe("المحتوى الكامل للملف بعد التعديل"),
       summary: z.string().describe("سطر واحد يشرح سبب هذا التغيير"),
     }),
-    execute: async ({ path, content, summary }) => {
-      if (content.length > 12_000) {
-        return {
-          ok: false,
-          path,
-          error: "الدفعة أكبر من 12000 حرف. اكتب أول 12000 حرف بـ write_file ثم أكمل عبر append_file بدفعات أصغر.",
-        };
-      }
-      const { supabase, userId, projectId: pid } = guard();
-      const { data: existing } = await supabase
-        .from("files")
-        .select("id, version")
-        .eq("project_id", pid)
-        .eq("path", path)
-        .maybeSingle();
+    execute: async ({ path, content, summary }) => writeOne(path, content, summary),
+  });
 
-      if (existing) {
-        await snapshot(supabase, pid, userId, path);
-        // قفل تفاؤلي: لا نكتب إن غيّر نداء متوازٍ نفس الملف بيننا
-        const { data: updated, error } = await supabase
-          .from("files")
-          .update({ content, version: existing.version + 1 })
-          .eq("id", existing.id)
-          .eq("version", existing.version)
-          .select("version")
-          .maybeSingle();
-        if (error) throw new Error(error.message);
-        if (!updated) {
-          return {
+  /** كتابة دفعة ملفات في نداء واحد — يقلّص عدد الجولات وزمن بناء المشروع بشكل كبير. */
+  const writeFiles = tool({
+    description:
+      "يكتب عدة ملفات دفعة واحدة في نداء واحد (index.html + styles.css + scripts... معاً). استخدمه دائماً بدل تكرار write_file عندما تكتب أكثر من ملف.",
+    inputSchema: z.object({
+      files: z
+        .array(
+          z.object({
+            path: z.string().describe("مسار الملف"),
+            content: z.string().describe("المحتوى الكامل للملف"),
+          }),
+        )
+        .describe("قائمة الملفات المراد كتابتها"),
+      summary: z.string().describe("سطر واحد يشرح سبب هذه الدفعة"),
+    }),
+    execute: async ({ files, summary }) => {
+      const results: Array<{ ok: boolean; path: string; error?: string; bytes?: number }> = [];
+      for (const file of files) {
+        try {
+          const result = await writeOne(file.path, file.content, summary);
+          results.push({
+            ok: result.ok !== false,
+            path: file.path,
+            bytes: file.content.length,
+            ...(result.ok === false ? { error: String(result.error) } : {}),
+          });
+        } catch (error) {
+          results.push({
             ok: false,
-            path,
-            error: "تم تعديل الملف من نداء آخر أثناء الكتابة. اقرأه من جديد بـ read_file ثم أعد التعديل.",
-          };
+            path: file.path,
+            error: error instanceof Error ? error.message : String(error),
+          });
         }
-        return { path, version: updated.version, bytes: content.length, summary };
       }
-
-      const { error } = await supabase
-        .from("files")
-        .insert({ project_id: pid, user_id: userId, path, content });
-      if (error) throw new Error(error.message);
-      return { path, version: 1, bytes: content.length, summary };
+      const failed = results.filter((r) => !r.ok);
+      return {
+        ok: failed.length === 0,
+        written: results.length - failed.length,
+        failed: failed.length,
+        results,
+        summary,
+        ...(failed.length
+          ? { error: `فشلت كتابة ${failed.length} ملف — أعد كتابتها فردياً بـ write_file.` }
+          : {}),
+      };
     },
   });
 
@@ -419,7 +583,16 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null) {
         .eq("project_id", pid)
         .eq("path", path)
         .maybeSingle();
-      if (!existing) return { ok: false, error: `الملف ${path} غير موجود. استخدم write_file لإنشائه.` };
+      if (!existing) {
+        // الملف ليس في مساحة عمل المشروع — قد يكون من كود المنصة نفسها (تطوير ذاتي).
+        if (isPlatformPath(path)) {
+          return editPlatformFile(path, edits, summary);
+        }
+        return {
+          ok: false,
+          error: `الملف ${path} غير موجود في مساحة عمل المشروع. استخدم write_file لإنشائه، أو self_read_file/self_write_file إن كان من كود المنصة.`,
+        };
+      }
 
       let content = existing.content;
       const applied: string[] = [];
@@ -466,7 +639,6 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null) {
     },
   });
 
-
   const readFile = tool({
     description: "يقرأ محتوى ملف من مساحة عمل المشروع.",
     inputSchema: z.object({ path: z.string() }),
@@ -499,6 +671,217 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null) {
           version: f.version,
           bytes: f.content.length,
         })),
+      };
+    },
+  });
+
+  /** يزامن ملفات المشروع من قاعدة البيانات إلى مساحة التنفيذ الحقيقية. */
+  const syncRuntime = async () => {
+    const { supabase, projectId: pid } = guard();
+    const { data } = await supabase.from("files").select("path, content").eq("project_id", pid);
+    const files = ((data ?? []) as any[]).map((f: any) => ({
+      path: f.path,
+      content: f.content ?? "",
+    }));
+    await runtimeSync(pid, files, false);
+    return { pid, count: files.length };
+  };
+
+  const shell = tool({
+    description:
+      "ينفّذ أمر shell داخل حاوية تنفيذ حقيقية خاصة بالمشروع (Node 22 + npm + git + python). يزامن ملفات المشروع أولاً ثم يعيد المخرجات ورمز الخروج. استخدمه لـ npm install / npm run build / npx vitest.",
+    inputSchema: z.object({
+      command: z.string().describe("الأمر المراد تنفيذه"),
+      reason: z.string().describe("سبب تنفيذ الأمر"),
+      timeoutSeconds: z.number().int().min(5).max(600).default(300),
+    }),
+    execute: async ({ command, timeoutSeconds }) => {
+      if (!runtimeConfigured()) {
+        return { ok: false, error: "بيئة التنفيذ غير مفعّلة — استخدم run_command بدلاً منها." };
+      }
+      const { pid } = await syncRuntime();
+      const result = await runtimeExec(pid, command, timeoutSeconds * 1000);
+      return {
+        ok: result.ok,
+        exitCode: result.exitCode,
+        durationMs: result.durationMs,
+        output: result.output.slice(-20_000),
+      };
+    },
+  });
+
+  const devServer = tool({
+    description:
+      "يدير خادم التطوير الحقيقي للمشروع داخل حاوية التنفيذ: start يشغّله ويعيد رابط المعاينة الحيّة، logs يقرأ السجل لاكتشاف الأخطاء، stop يوقفه.",
+    inputSchema: z.object({
+      action: z.enum(["start", "stop", "logs", "status"]),
+      command: z.string().optional().describe("أمر مخصص للتشغيل (اختياري)"),
+    }),
+    execute: async ({ action, command }) => {
+      if (!runtimeConfigured()) {
+        return { ok: false, error: "بيئة التنفيذ غير مفعّلة على هذه النسخة." };
+      }
+      const { projectId: pid } = guard();
+      if (action === "stop") return { ...(await runtimeDevStop(pid)), ok: true };
+      if (action === "status") return { ...(await runtimeDevStatus(pid)), ok: true };
+      if (action === "logs") {
+        const logs = await runtimeDevLogs(pid, 200);
+        return { ok: true, logs: logs.logs?.slice(-120) ?? [] };
+      }
+      await syncRuntime();
+      const started = await runtimeDevStart(pid, command);
+      return {
+        ...started,
+        ok: started.ready === true,
+        previewUrl: `/api/public/rt/${pid}/`,
+        logs: (started.logs ?? []).slice(-60),
+      };
+    },
+  });
+
+  /** كتابة ملف داخلي (تقارير الفحص واللقطات) دون المرور بأداة write_file. */
+  const saveInternalFile = async (path: string, content: string) => {
+    const { supabase, userId, projectId: pid } = guard();
+    const { data: existing } = await supabase
+      .from("files")
+      .select("id, version")
+      .eq("project_id", pid)
+      .eq("path", path)
+      .maybeSingle();
+    if (existing) {
+      await supabase
+        .from("files")
+        .update({ content, version: (existing as any).version + 1 })
+        .eq("id", (existing as any).id);
+    } else {
+      await supabase.from("files").insert({ project_id: pid, user_id: userId, path, content });
+    }
+  };
+
+  /** فحص متصفح حقيقي داخل حاوية التنفيذ (لا يحتاج منفّذاً خارجياً). */
+  const runBrowserCheck = async (opts: {
+    path?: string;
+    devices?: string[];
+    screenshots?: boolean;
+  }) => {
+    const { projectId: pid } = guard();
+    await syncRuntime();
+    const status = await runtimeDevStatus(pid).catch(() => null);
+    if (!status?.running) {
+      // مشروع ثابت أو خادم متوقف: خادم الحاوية يقدّم الملفات مباشرة، فلا حاجة للتشغيل.
+      await runtimeDevStart(pid).catch(() => undefined);
+    }
+    const result = await runtimeBrowserCheck(pid, {
+      path: opts.path ?? "",
+      devices: opts.devices ?? ["desktop", "mobile"],
+      screenshots: opts.screenshots !== false,
+    });
+    for (const r of result.results) {
+      if (r.screenshot) await saveInternalFile(`.weaver/shot-${r.device}.txt`, r.screenshot);
+    }
+    return result;
+  };
+
+  const browserCheckTool = tool({
+    description:
+      "فحص متصفح حقيقي (Chromium) داخل حاوية المشروع: يفتح المعاينة الحيّة على أحجام شاشة متعددة، يجمع أخطاء الكونسول والشبكة وملاحظات الوصولية والتمرير الأفقي، ويحفظ لقطات الشاشة لاستخدامها في design_review. لا يحتاج منفّذاً خارجياً. نفّذه بعد run_checks وقبل publish_site.",
+    inputSchema: z.object({
+      path: z
+        .string()
+        .default("")
+        .describe("مسار الصفحة داخل المعاينة مثل about.html (فارغ = الرئيسية)"),
+      devices: z.array(z.enum(["desktop", "tablet", "mobile"])).default(["desktop", "mobile"]),
+    }),
+    execute: async ({ path, devices }) => {
+      if (!runtimeConfigured()) {
+        return { ok: false, error: "بيئة التنفيذ غير مفعّلة — استخدم visual_audit عبر المنفّذ." };
+      }
+      const result = await runBrowserCheck({ path, devices });
+      return {
+        ok: result.ok,
+        errors: result.errors.slice(0, 40),
+        warnings: result.warnings.slice(0, 40),
+        pages: result.results.map((r) => ({
+          device: r.device,
+          status: r.status,
+          title: r.title,
+          navError: r.navError,
+          screenshotSaved: Boolean(r.screenshot),
+        })),
+        hint: result.ok
+          ? "لا أخطاء في المتصفح — يمكنك متابعة design_review ثم النشر."
+          : "أصلح كل خطأ ثم أعد browser_check حتى ok=true.",
+      };
+    },
+  });
+
+  /** حلقة إصلاح ذاتي مغلقة: تشغيل → قراءة الأخطاء الحقيقية → تقرير قابل للتنفيذ. */
+  const autoRepair = tool({
+    description:
+      "حلقة إصلاح ذاتي مغلقة: تزامن الملفات، تشغّل خادم التطوير، تقرأ سجل البناء وأخطاء المتصفح الفعلية، وتعيد قائمة أخطاء مرتّبة مع الملفات المرشّحة للإصلاح. استخدمها بعد كل دفعة كتابة وكرّرها بعد كل إصلاح حتى تصبح clean=true.",
+    inputSchema: z.object({
+      install: z
+        .boolean()
+        .default(false)
+        .describe("تشغيل npm install قبل الفحص إن تغيّرت الاعتماديات"),
+      page: z.string().default("").describe("الصفحة المراد فحصها في المتصفح"),
+    }),
+    execute: async ({ install, page }) => {
+      if (!runtimeConfigured()) {
+        return { ok: false, error: "بيئة التنفيذ غير مفعّلة — استخدم fix_errors + run_checks." };
+      }
+      const { pid } = await syncRuntime();
+      const steps: Array<{ step: string; ok: boolean; detail: string }> = [];
+
+      if (install) {
+        const res = await runtimeExec(pid, "npm install --no-audit --no-fund", 300_000);
+        steps.push({ step: "npm install", ok: res.ok, detail: res.output.slice(-3000) });
+      }
+
+      const started = await runtimeDevStart(pid).catch(
+        (err) => ({ ready: false, logs: [String(err)] }) as any,
+      );
+      const logs = await runtimeDevLogs(pid, 200).catch(() => ({ logs: [], errors: [] }) as any);
+      const buildErrors: string[] = (logs.errors ?? []).slice(-30);
+      steps.push({
+        step: "dev server",
+        ok: Boolean(started?.ready),
+        detail: (logs.logs ?? []).slice(-40).join("\n").slice(-4000),
+      });
+
+      let browser: Awaited<ReturnType<typeof runBrowserCheck>> | null = null;
+      if (started?.ready !== false || buildErrors.length === 0) {
+        browser = await runBrowserCheck({ path: page, devices: ["desktop", "mobile"] }).catch(
+          () => null,
+        );
+      }
+
+      const allErrors = [...buildErrors, ...(browser?.errors ?? [])];
+      const clean = allErrors.length === 0 && Boolean(started?.ready);
+      await saveInternalFile(
+        ".weaver/auto-repair.json",
+        JSON.stringify(
+          {
+            at: new Date().toISOString(),
+            clean,
+            errors: allErrors,
+            warnings: browser?.warnings ?? [],
+          },
+          null,
+          2,
+        ),
+      );
+
+      return {
+        ok: true,
+        clean,
+        previewUrl: `/api/public/rt/${pid}/`,
+        errors: allErrors.slice(0, 40),
+        warnings: (browser?.warnings ?? []).slice(0, 30),
+        steps,
+        next: clean
+          ? "لا أخطاء — تابع design_review ثم publish_site."
+          : "أصلح الأخطاء أعلاه بـ edit_file/write_file ثم أعد auto_repair. لا تعلن الإنجاز قبل clean=true.",
       };
     },
   });
@@ -622,7 +1005,9 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null) {
   };
 
   const auditBaseCommand = () => {
-    const origin = (process.env["WEAVER_PUBLIC_URL"] || "https://buildbuddy-ai-55.lovable.app").replace(/\/+$/, "");
+    const origin = (
+      process.env["WEAVER_PUBLIC_URL"] || "https://buildbuddy-ai-55.lovable.app"
+    ).replace(/\/+$/, "");
     return `curl -fsSL ${origin}/weaver-audit.mjs -o .weaver-audit.mjs && node .weaver-audit.mjs`;
   };
 
@@ -686,8 +1071,72 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null) {
         return { ok: false, error: "لا توجد لقطة — نفّذ visual_audit أولاً." };
       }
       const reference = useReference ? await readWorkspaceFile(".weaver/reference.txt") : "";
-      const result = await reviewScreenshot(shot, context, reference.length > 1000 ? reference : undefined);
+      const result = await reviewScreenshot(
+        shot,
+        context,
+        reference.length > 1000 ? reference : undefined,
+      );
       return { ...result, device, comparedToReference: Boolean(reference) };
+    },
+  });
+
+  const brandKit = tool({
+    description:
+      "يولّد هوية بصرية كاملة للمشروع ويكتبها كملفات: brand/tokens.css (لوحة ألوان محسوبة رياضياً بتباين WCAG مضمون + مقياس مسافات وطباعة + مكوّنات أساسية) و brand/logo.svg و brand/wordmark.svg و brand/favicon.svg و brand/BRAND.md و brand/head.html. نفّذه كأول خطوة في أي مشروع واجهة قبل كتابة أي HTML، ثم اربط brand/tokens.css في كل صفحة ولا تكتب أي لون مباشر بعدها.",
+    inputSchema: z.object({
+      brandName: z.string().describe("اسم العلامة كما يظهر للزائر"),
+      personality: z
+        .string()
+        .describe(
+          "طابع العلامة: technical أو warm أو luxury أو playful أو natural أو medical أو editorial (أو وصف عربي مثل «مطعم دافئ»)",
+        ),
+      baseColor: z
+        .string()
+        .describe("لون أساسي بصيغة hex إن طلبه المستخدم، أو نص فارغ ليُشتق تلقائياً"),
+      locale: z.enum(["ar", "en"]).describe("لغة المحتوى الأساسية"),
+      scheme: z.enum(["light", "dark"]).describe("الوضع الافتراضي للواجهة"),
+      logoStyle: z.enum(["monogram", "geometric", "wordmark"]).describe("نمط الشعار"),
+    }),
+    execute: async ({ brandName, personality, baseColor, locale, scheme, logoStyle }) => {
+      const { supabase, userId, projectId: pid } = guard();
+      const kit = buildBrandKit({
+        brandName,
+        personality,
+        ...(baseColor?.trim() ? { baseColor } : {}),
+        locale,
+        scheme,
+        logoStyle,
+      });
+
+      const written: string[] = [];
+      for (const file of kit.files) {
+        const { data: existing } = await supabase
+          .from("files")
+          .select("id, version")
+          .eq("project_id", pid)
+          .eq("path", file.path)
+          .maybeSingle();
+        if (existing) {
+          await snapshot(supabase, pid, userId, file.path);
+          await supabase
+            .from("files")
+            .update({ content: file.content, version: existing.version + 1 })
+            .eq("id", existing.id);
+        } else {
+          await supabase
+            .from("files")
+            .insert({ project_id: pid, user_id: userId, path: file.path, content: file.content });
+        }
+        written.push(file.path);
+      }
+
+      return {
+        written,
+        palette: kit.palette,
+        fonts: kit.fonts,
+        summary: kit.summary,
+        headSnippet: kit.files.find((f) => f.path === "brand/head.html")?.content ?? "",
+      };
     },
   });
 
@@ -697,16 +1146,17 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null) {
     inputSchema: z.object({
       siteName: z.string().describe("اسم الموقع كما يظهر للزائر"),
       description: z.string().describe("وصف الموقع في أقل من 155 حرفاً"),
-      baseUrl: z.string().describe("العنوان الأساسي للموقع بعد النشر مثل https://example.com/s/my-site"),
+      baseUrl: z
+        .string()
+        .describe("العنوان الأساسي للموقع بعد النشر مثل https://example.com/s/my-site"),
       themeColor: z.string().describe("لون الهوية بصيغة hex مثل #0f766e"),
-      organizationType: z.string().describe("نوع الجهة في schema.org مثل Organization أو LocalBusiness أو Person"),
+      organizationType: z
+        .string()
+        .describe("نوع الجهة في schema.org مثل Organization أو LocalBusiness أو Person"),
     }),
     execute: async ({ siteName, description, baseUrl, themeColor, organizationType }) => {
       const { supabase, userId, projectId: pid } = guard();
-      const { data: files } = await supabase
-        .from("files")
-        .select("path")
-        .eq("project_id", pid);
+      const { data: files } = await supabase.from("files").select("path").eq("project_id", pid);
 
       const kit = buildSeoKit({
         siteName,
@@ -760,7 +1210,10 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null) {
         .like("path", `${prefix}%`);
 
       if (!files?.length) {
-        return { ok: false, error: `لا توجد ملفات تحت ${prefix} — شغّل البناء أولاً عبر run_command.` };
+        return {
+          ok: false,
+          error: `لا توجد ملفات تحت ${prefix} — شغّل البناء أولاً عبر run_command.`,
+        };
       }
 
       const moved: string[] = [];
@@ -811,7 +1264,6 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null) {
     },
   });
 
-
   const runChecksTool = tool({
     description:
       "ينفّذ فحصاً حقيقياً على ملفات مساحة العمل: تحليل نحوي لملفات JavaScript، تحقق من صحة JSON، توازن CSS، سلامة وسوم HTML، ووجود المراجع المحلية. يسجّل النتيجة في سجل التشغيل. استخدمه قبل إعلان نجاح أي مهمة.",
@@ -845,7 +1297,13 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null) {
     description:
       "يعيد تشغيل run_checks تلقائياً ويصلح الأخطاء والتحذيرات المكتشفة في ملفات مساحة العمل. استخدمه عندما يطلب المستخدم 'أصلح الأخطاء' أو بعد كتابة ملفات لضمان نظافة الفحص.",
     inputSchema: z.object({
-      maxIterations: z.number().int().min(1).max(5).default(3).describe("عدد محاولات الإصلاح القصوى"),
+      maxIterations: z
+        .number()
+        .int()
+        .min(1)
+        .max(5)
+        .default(3)
+        .describe("عدد محاولات الإصلاح القصوى"),
       focus: z.enum(["errors", "warnings", "all"]).default("all").describe("أي المشاكل تُصلح"),
     }),
     execute: async ({ maxIterations, focus }) => {
@@ -858,11 +1316,13 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null) {
       const fixerModel = process.env["WEAVER_FIXER_MODEL"] || "google/gemini-2.5-flash";
 
       let files =
-        (await supabase
-          .from("files")
-          .select("path, content")
-          .eq("project_id", pid)
-          .order("path", { ascending: true })).data ?? [];
+        (
+          await supabase
+            .from("files")
+            .select("path, content")
+            .eq("project_id", pid)
+            .order("path", { ascending: true })
+        ).data ?? [];
 
       let report = runChecks(files);
       if (report.ok) return { ok: true, fixed: [], iterations: 0, report };
@@ -943,11 +1403,13 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null) {
         }
 
         files =
-          (await supabase
-            .from("files")
-            .select("path, content")
-            .eq("project_id", pid)
-            .order("path", { ascending: true })).data ?? [];
+          (
+            await supabase
+              .from("files")
+              .select("path, content")
+              .eq("project_id", pid)
+              .order("path", { ascending: true })
+          ).data ?? [];
         report = runChecks(files);
         if (report.ok) break;
       }
@@ -1058,8 +1520,12 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null) {
       content: z.string().describe("الجزء التالي من المحتوى"),
     }),
     execute: async ({ path, content }) => {
-      if (content.length > 12_000) {
-        return { ok: false, path, error: "دفعة الإلحاق أكبر من 12000 حرف؛ قسّمها إلى دفعات أصغر." };
+      if (content.length > 400_000) {
+        return {
+          ok: false,
+          path,
+          error: "دفعة الإلحاق أكبر من 400000 حرف؛ قسّمها إلى دفعات أصغر.",
+        };
       }
       const { supabase, userId, projectId: pid } = guard();
       const { data: existing } = await supabase
@@ -1206,7 +1672,10 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null) {
       const { supabase, projectId: pid, userId } = guard();
       const { error } = await supabase
         .from("project_memory")
-        .upsert({ project_id: pid, user_id: userId, key, value, kind }, { onConflict: "project_id,key" });
+        .upsert(
+          { project_id: pid, user_id: userId, key, value, kind },
+          { onConflict: "project_id,key" },
+        );
       if (error) return { ok: false, error: error.message };
       return { ok: true, key, kind };
     },
@@ -1238,6 +1707,8 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null) {
 
   return {
     write_file: writeFile,
+    write_files: writeFiles,
+
     edit_file: editFile,
 
     append_file: appendFile,
@@ -1245,6 +1716,10 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null) {
     read_file: readFile,
     list_files: listFiles,
     run_command: runCommand,
+    shell: shell,
+    dev_server: devServer,
+    browser_check: browserCheckTool,
+    auto_repair: autoRepair,
     run_status: runStatus,
 
     run_checks: runChecksTool,
@@ -1252,6 +1727,7 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null) {
     visual_audit: visualAudit,
     design_review: designReview,
     capture_reference: captureReference,
+    brand_kit: brandKit,
     seo_kit: seoKit,
     promote_build: promoteBuild,
     publish_site: publishSite,
@@ -1263,7 +1739,6 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null) {
     memory_delete: memoryDelete,
   };
 }
-
 
 /** أدوات التطوير الذاتي: تعديل كود منصة Weaver نفسها عبر مستودعها. */
 /** أدوات التعديل الذاتي بمراجعة: تقترح تغييراً على كود المنصة بدل كتابته مباشرة. */
@@ -1308,7 +1783,8 @@ function platformTools(auth: AuthedContext | null) {
       },
     }),
     platform_settings_get: tool({
-      description: "يقرأ إعدادات المنصة الحالية (النماذج، الحدود، الهوية) التي يضبطها المالك بلا كود.",
+      description:
+        "يقرأ إعدادات المنصة الحالية (النماذج، الحدود، الهوية) التي يضبطها المالك بلا كود.",
       inputSchema: z.object({}),
       execute: async () => {
         const { loadPlatformSettings } = await import("@/lib/platform.server");
@@ -1369,7 +1845,20 @@ function selfTools() {
         return selfWrite(repo, clean, content, message);
       },
     }),
-
+    deploy_platform: tool({
+      description:
+        "ينشر آخر إصدار من كود منصة Weaver على خادم Contabo (سحب من GitHub ثم إعادة بناء الحاويات وفحص صحي)، أو يتراجع عن آخر نشر. استخدمه بعد self_write_file عندما يطلب المالك تفعيل التعديلات على الخادم.",
+      inputSchema: z.object({
+        action: z.enum(["deploy", "rollback"]).describe("deploy للنشر أو rollback للتراجع"),
+        confirmed: z.boolean().describe("true فقط بعد موافقة المالك الصريحة"),
+      }),
+      execute: async ({ action, confirmed }) => {
+        if (!confirmed) return { error: "النشر يحتاج موافقة صريحة من المالك." };
+        const { runDeployHook } = await import("@/lib/platform.server");
+        const result = await runDeployHook(action);
+        return { ok: result.ok, status: result.status, log: result.log.slice(-4000) };
+      },
+    }),
   };
 }
 
@@ -1388,7 +1877,8 @@ function intelTools(auth: AuthedContext | null, projectId: string | null) {
       execute: async () => projectMap(guard()),
     }),
     file_outline: tool({
-      description: "مخطط ملف واحد: أقسامه وعناوينه ودواله مع أرقام الأسطر — بديل خفيف عن read_file.",
+      description:
+        "مخطط ملف واحد: أقسامه وعناوينه ودواله مع أرقام الأسطر — بديل خفيف عن read_file.",
       inputSchema: z.object({ path: z.string() }),
       execute: async ({ path }) => {
         const map = await projectMap(guard());
@@ -1397,7 +1887,8 @@ function intelTools(auth: AuthedContext | null, projectId: string | null) {
       },
     }),
     read_slice: tool({
-      description: "يقرأ مقطعاً محدداً من ملف بالأسطر (from/to) بدل الملف كاملاً — أسرع وأدق للتعديلات الجراحية.",
+      description:
+        "يقرأ مقطعاً محدداً من ملف بالأسطر (from/to) بدل الملف كاملاً — أسرع وأدق للتعديلات الجراحية.",
       inputSchema: z.object({ path: z.string(), from: z.number(), to: z.number() }),
       execute: async ({ path, from, to }) => readSlice(guard(), path, from, to),
     }),
@@ -1582,7 +2073,8 @@ function botTools(auth: AuthedContext | null, projectId: string | null, origin: 
         const { supabase, userId, projectId: pid } = guard();
         const existing = await loadBot();
         const botToken = token.trim() || existing?.token;
-        if (!botToken) throw new Error("لا يوجد توكن مسجّل؛ اطلب من المستخدم توكن البوت من @BotFather");
+        if (!botToken)
+          throw new Error("لا يوجد توكن مسجّل؛ اطلب من المستخدم توكن البوت من @BotFather");
 
         const me = await tgGetMe(botToken);
         const url = `${publicBase(origin)}/api/public/tg/${pid}`;
@@ -1747,6 +2239,39 @@ export function hasBuildIntent(messages: UIMessage[]) {
   return BUILD_INTENT_PATTERN.test(text);
 }
 
+/** آخر نصّ كتبه المستخدم — يُستخدم لاختيار الأدوات المرسلة للنموذج. */
+function lastUserText(messages: UIMessage[]) {
+  const lastUser = [...messages].reverse().find((m) => m.role === "user");
+  return (lastUser?.parts ?? [])
+    .map((p) => (p.type === "text" ? p.text : ""))
+    .join(" ")
+    .toLowerCase();
+}
+
+/**
+ * يحدّد مجموعات الأدوات المرسلة في هذه الجولة.
+ * إرسال كل الأدوات دائماً كان يضيف آلاف التوكينات إلى كل خطوة من خطوات الوكيل،
+ * وهو أحد أكبر أسباب البطء وطول الصمت مقارنة بالمنصات الكبرى.
+ */
+export function selectToolGroups(mode: string, messages: UIMessage[]) {
+  const text = lastUserText(messages);
+  const mentions = (pattern: RegExp) => pattern.test(text);
+  if (mode === "platform") {
+    return { workspace: false, bot: false, db: false, connectors: false, platform: true };
+  }
+  return {
+    workspace: mode === "build",
+    bot: mode === "bot" || mentions(/telegram|تيليغرام|بوت|bot/),
+    db:
+      mode === "build" &&
+      mentions(/قاعدة|جدول|sql|database|supabase|بيانات|تسجيل|حساب|auth|مستخدم/),
+    connectors: mentions(
+      /connector|رابط خارجي|api|notion|airtable|slack|github|resend|unsplash|بريد|webhook/,
+    ),
+    platform: mentions(/weaver نفس|المنصة نفسها|عدّل المنصة|طوّر المنصة|self_/),
+  };
+}
+
 /** البناء مكتمل فعلياً حين توجد ملفات + نجح الفحص + تم النشر — حالة محفوظة في قاعدة البيانات. */
 export function isBuildComplete(state: LifecycleState) {
   return state.hasFiles && state.checksPassed && state.published;
@@ -1760,8 +2285,10 @@ export function isBuildIncomplete(state: LifecycleState, buildIntent: boolean) {
 
 /** الخطوة التالية الوحيدة المطلوبة لإغلاق البناء — تُرسَل للواجهة وتُحقن في التعليمات. */
 export function nextBuildAction(state: LifecycleState): string | null {
-  if (!state.hasFiles) return "اكتب ملفات المشروع الفعلية عبر write_file (ابدأ بـ index.html و styles.css).";
-  if (!state.checksPassed) return "شغّل run_checks وأصلح كل خطأ عبر fix_errors/write_file حتى ينجح الفحص.";
+  if (!state.hasFiles)
+    return "اكتب ملفات المشروع الفعلية عبر write_file (ابدأ بـ index.html و styles.css).";
+  if (!state.checksPassed)
+    return "شغّل run_checks وأصلح كل خطأ عبر fix_errors/write_file حتى ينجح الفحص.";
   if (!state.published) return "انشر المشروع عبر publish_site واذكر الرابط /s/<slug>.";
   return null;
 }
@@ -1777,6 +2304,7 @@ function applyToolResult(state: LifecycleState, name: string, value: unknown) {
   if (
     [
       "write_file",
+      "write_files",
       "append_file",
       "edit_file",
       "delete_file",
@@ -1784,13 +2312,23 @@ function applyToolResult(state: LifecycleState, name: string, value: unknown) {
       "run_checks",
       "fix_errors",
       "run_command",
+      "shell",
       "publish_site",
     ].includes(name)
   ) {
     state.acted = true;
   }
   if (name === "build_task_graph") state.hasTasks = true;
-  if (["write_file", "append_file", "edit_file", "delete_file", "promote_build"].includes(name)) {
+  if (
+    [
+      "write_file",
+      "write_files",
+      "append_file",
+      "edit_file",
+      "delete_file",
+      "promote_build",
+    ].includes(name)
+  ) {
     state.hasFiles = true;
     state.checksPassed = false;
     state.published = false;
@@ -1804,6 +2342,7 @@ function applyToolResult(state: LifecycleState, name: string, value: unknown) {
 
 const RETRYABLE_TOOLS = new Set([
   "write_file",
+  "write_files",
   "append_file",
   "edit_file",
   "delete_file",
@@ -1811,6 +2350,10 @@ const RETRYABLE_TOOLS = new Set([
   "fix_errors",
   "publish_site",
   "run_command",
+  "shell",
+  "dev_server",
+  "browser_check",
+  "auto_repair",
   "promote_build",
   "generate_image",
   "visual_audit",
@@ -1823,7 +2366,19 @@ const RETRYABLE_TOOLS = new Set([
   "semantic_index",
 ]);
 
-const RETRY_DELAYS_MS = [600, 1800, 4500];
+const RETRY_DELAYS_MS = [400, 1200];
+
+/**
+ * نتائج الأدوات المنظّمة ({ ok:false }) نتيجة حتمية وليست عطلاً عابراً:
+ * إعادة محاولتها كانت تضيف ثوانيَ صمت لكل خطوة (وتعيد فحصاً فاشلاً بلا داعٍ).
+ * لا نعيد المحاولة إلا على الأعطال العابرة فعلاً (شبكة/مهلة/5xx/حدّ معدّل).
+ */
+const TRANSIENT_ERROR =
+  /(fetch failed|network|timeout|timed out|ECONN|ETIMEDOUT|EAI_AGAIN|socket|rate limit|429|50[0-4]\b|temporarily|overloaded)/i;
+
+function isTransientError(message: string) {
+  return TRANSIENT_ERROR.test(message);
+}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -1889,17 +2444,21 @@ export function hardenTools<T extends Record<string, unknown>>(
             const okDetail = ok ? undefined : JSON.stringify(result).slice(0, 400);
             onEvent?.({ name, ok, attempt, durationMs: Date.now() - startedAt, detail: okDetail });
             logAudit(name, ok, Date.now() - startedAt, attempt, okDetail);
-            if (ok || attempt === maxAttempts) {
-              onResult?.(name, result);
-              return result;
-            }
-            lastError = JSON.stringify(result).slice(0, 400);
+            // النتيجة المنظّمة تُعاد فوراً — نجحت أو فشلت — بلا إعادة محاولة
+            onResult?.(name, result);
+            return result;
           } catch (error) {
             lastError = error instanceof Error ? error.message : String(error);
             console.error(`[weaver:tool:${name}] attempt ${attempt}`, lastError);
-            onEvent?.({ name, ok: false, attempt, durationMs: Date.now() - startedAt, detail: lastError });
+            onEvent?.({
+              name,
+              ok: false,
+              attempt,
+              durationMs: Date.now() - startedAt,
+              detail: lastError,
+            });
             logAudit(name, false, Date.now() - startedAt, attempt, lastError);
-            if (attempt === maxAttempts) {
+            if (attempt === maxAttempts || !isTransientError(lastError)) {
               return { ok: false, error: lastError, tool: name, attempts: attempt };
             }
           }
@@ -2046,15 +2605,15 @@ function statusPrompt(state: LifecycleState, buildIntent: boolean) {
       "ممنوع إنهاء الجولة بنص فقط أو بطلب مراجعة/موافقة قبل تنفيذ هذه الخطوة بأداة فعلية.",
     );
   } else {
-    lines.push("المشروع مكتمل ومنشور — لا تعِد البناء من الصفر، نفّذ فقط ما يطلبه المستخدم صراحةً.");
+    lines.push(
+      "المشروع مكتمل ومنشور — لا تعِد البناء من الصفر، نفّذ فقط ما يطلبه المستخدم صراحةً.",
+    );
   }
   return lines.join("\n") + "\n";
 }
 
 export { MAX_STEPS, TIME_BUDGET_MS, budgetReached, applyToolResult, statusPrompt };
 export type { LifecycleState };
-
-
 
 export const Route = createFileRoute("/api/chat")({
   server: {
@@ -2068,8 +2627,8 @@ export const Route = createFileRoute("/api/chat")({
         }
 
         const key = process.env["OPENROUTER_API_KEY"];
-        if (!key) {
-          return new Response("Missing OPENROUTER_API_KEY", { status: 500 });
+        if (!key && !process.env["GEMINI_API_KEY"] && !process.env["GROQ_API_KEY"]) {
+          return new Response("Missing model provider key", { status: 500 });
         }
 
         const auth = await authenticateRequest(request);
@@ -2077,7 +2636,6 @@ export const Route = createFileRoute("/api/chat")({
         const projectId = typeof body.projectId === "string" ? body.projectId : null;
         const origin = new URL(request.url).origin;
 
-        const openrouter = createOpenRouterProvider(key, origin);
         const requested =
           typeof body.model === "string" && /^[\w.-]+\/[\w.:-]+$/.test(body.model.trim())
             ? body.model.trim()
@@ -2088,6 +2646,9 @@ export const Route = createFileRoute("/api/chat")({
           : [];
         const mode = typeof body.mode === "string" ? body.mode : "build";
         const buildIntent = mode === "build" && hasBuildIntent(messages as UIMessage[]);
+        // اختيار الأدوات حسب الوضع والنيّة: إرسال كل الأدوات في كل خطوة كان
+        // يضخّم الطلب ويبطّئ زمن أول توكن في كل دورة من دورات الوكيل.
+        const needs = selectToolGroups(mode, messages as UIMessage[]);
 
         const lifecycle: LifecycleState = {
           hasTasks: false,
@@ -2098,20 +2659,30 @@ export const Route = createFileRoute("/api/chat")({
         };
         if (projectId) {
           try {
-            const [{ count: taskCount }, { count: fileCount }, { data: project }, { data: latestCheck }] =
-              await Promise.all([
-                auth.supabase.from("tasks").select("id", { count: "exact", head: true }).eq("project_id", projectId),
-                auth.supabase.from("files").select("id", { count: "exact", head: true }).eq("project_id", projectId),
-                auth.supabase.from("projects").select("published").eq("id", projectId).maybeSingle(),
-                auth.supabase
-                  .from("runs")
-                  .select("status")
-                  .eq("project_id", projectId)
-                  .eq("kind", "check")
-                  .order("created_at", { ascending: false })
-                  .limit(1)
-                  .maybeSingle(),
-              ]);
+            const [
+              { count: taskCount },
+              { count: fileCount },
+              { data: project },
+              { data: latestCheck },
+            ] = await Promise.all([
+              auth.supabase
+                .from("tasks")
+                .select("id", { count: "exact", head: true })
+                .eq("project_id", projectId),
+              auth.supabase
+                .from("files")
+                .select("id", { count: "exact", head: true })
+                .eq("project_id", projectId),
+              auth.supabase.from("projects").select("published").eq("id", projectId).maybeSingle(),
+              auth.supabase
+                .from("runs")
+                .select("status")
+                .eq("project_id", projectId)
+                .eq("kind", "check")
+                .order("created_at", { ascending: false })
+                .limit(1)
+                .maybeSingle(),
+            ]);
             lifecycle.hasTasks = (taskCount ?? 0) > 0;
             lifecycle.hasFiles = (fileCount ?? 0) > 0;
             lifecycle.checksPassed = latestCheck?.status === "passed";
@@ -2121,105 +2692,109 @@ export const Route = createFileRoute("/api/chat")({
           }
         }
 
-        // نقطة استرجاع تلقائية قبل كل رسالة: تسمح بالتراجع عن كل تغييرات هذه الجولة دفعة واحدة
+        // نقطة استرجاع تلقائية قبل كل رسالة — تُنفَّذ في الخلفية حتى لا تؤخّر بدء الردّ
         if (projectId) {
-          try {
-            const { data: current } = await auth.supabase
-              .from("files")
-              .select("path, content")
-              .eq("project_id", projectId);
-            if (current && current.length > 0) {
-              const lastUser = [...(messages as UIMessage[])]
-                .reverse()
-                .find((m) => m.role === "user");
-              const label =
-                (lastUser?.parts ?? [])
-                  .map((p) => (p.type === "text" ? p.text : ""))
-                  .join(" ")
-                  .trim()
-                  .slice(0, 120) || "قبل رسالة جديدة";
-              await auth.supabase.from("checkpoints").insert({
-                project_id: projectId,
-                user_id: auth.userId,
-                label,
-                file_count: current.length,
-                files: current as unknown as Json,
-              });
+          const lastUser = [...(messages as UIMessage[])].reverse().find((m) => m.role === "user");
+          const label =
+            (lastUser?.parts ?? [])
+              .map((p) => (p.type === "text" ? p.text : ""))
+              .join(" ")
+              .trim()
+              .slice(0, 120) || "قبل رسالة جديدة";
+          void (async () => {
+            try {
+              const { data: current } = await auth.supabase
+                .from("files")
+                .select("path, content")
+                .eq("project_id", projectId);
+              if (current && current.length > 0) {
+                await auth.supabase.from("checkpoints").insert({
+                  project_id: projectId,
+                  user_id: auth.userId,
+                  label,
+                  file_count: current.length,
+                  files: current as unknown as Json,
+                });
+              }
+            } catch {
+              /* نقطة الاسترجاع اختيارية ولا تُفشل المحادثة */
             }
-          } catch {
-            /* نقطة الاسترجاع اختيارية ولا تُفشل المحادثة */
-          }
+          })();
         }
 
-
+        // كل قراءات التهيئة تتم على التوازي حتى لا تتراكم زمنياً قبل أول توكن
+        const platformModule = await import("@/lib/platform.server");
+        const [customRows, platform, platformPrompt] = await Promise.all([
+          auth.supabase
+            .from("custom_skills")
+            .select("slug, name, prompt")
+            .eq("enabled", true)
+            .then((r) => r.data ?? [])
+            .catch(() => []),
+          platformModule.loadPlatformSettings(),
+          platformModule.activePromptOverride(),
+        ]);
 
         // المهارات المخصّصة التي أنشأها المالك (skill-creator)
         let customPrompt = "";
-        try {
-          const { data: rows } = await auth.supabase
-            .from("custom_skills")
-            .select("slug, name, prompt")
-            .eq("enabled", true);
-          const active = ((rows ?? []) as any[]).filter((r: any) => activeSkills.includes(`custom:${r.slug}`));
-          if (active.length > 0) {
-            customPrompt = `\n\n=== مهارات مخصّصة مفعّلة (التزم بها حرفياً) ===\n${active
-              .map((r: any) => `مهارة "${r.name}":\n${r.prompt}`)
-              .join("\n\n")}`;
-          }
-        } catch {
-          /* المهارات المخصّصة اختيارية */
+        const active = (customRows as any[]).filter((r: any) =>
+          activeSkills.includes(`custom:${r.slug}`),
+        );
+        if (active.length > 0) {
+          customPrompt = `\n\n=== مهارات مخصّصة مفعّلة (التزم بها حرفياً) ===\n${active
+            .map((r: any) => `مهارة "${r.name}":\n${r.prompt}`)
+            .join("\n\n")}`;
         }
 
-
-
-
-        // إعدادات المنصة بلا كود (نماذج، حدود، تعليمات إضافية) — تُطبَّق فوق الافتراضيات
-        const { loadPlatformSettings, activePromptOverride } = await import("@/lib/platform.server");
-        const platform = await loadPlatformSettings();
-        const platformPrompt = await activePromptOverride();
         applyModelOverrides(platform);
         const effectiveModel = requested ?? platform.primaryModel ?? modelId;
+        const routed = resolveBuildModel(effectiveModel, origin);
 
         let stepsUsed = 0;
         try {
           const result = streamText({
-
-            model: openrouter(effectiveModel),
+            model: routed.model,
             system:
               SYSTEM_PROMPT +
               MEMORY_RULE +
               DESIGN_KIT +
               skillPrompt(activeSkills) +
               customPrompt +
-              (platformPrompt ? `\n\nتعليمات إضافية من مالك المنصة (إلزامية):\n${platformPrompt}\n` : "") +
+              (platformPrompt
+                ? `\n\nتعليمات إضافية من مالك المنصة (إلزامية):\n${platformPrompt}\n`
+                : "") +
               modePrompt(mode) +
               statusPrompt(lifecycle, buildIntent),
 
-
             messages: await convertToModelMessages(messages as UIMessage[]),
-            tools: hardenTools({
-              ...planningTools(auth, projectId),
+            tools: hardenTools(
+              {
+                ...planningTools(auth, projectId),
 
-              ...webTools(),
-              ...workspaceTools(auth, projectId),
-              ...botTools(auth, projectId, origin),
-              ...(projectId ? targetSupabaseTools(projectId) : {}),
-              ...intelTools(auth, projectId),
-              ...connectorTools(projectId, auth.userId),
-              ...selfTools(),
-              ...platformTools(auth),
-            }, (name, value) => applyToolResult(lifecycle, name, value), undefined, {
-              userId: auth.userId,
-              projectId,
-            }),
-            stopWhen: [stepCountIs(platform.maxSteps || MAX_STEPS), budgetReached(startedAt)],
-            maxOutputTokens: platform.maxTokens || Number(process.env["OPENROUTER_MAX_TOKENS"] ?? 64000),
-
-            providerOptions: {
-              openrouter: {
-                reasoning: { effort: "medium" },
+                ...webTools(),
+                ...(needs.workspace ? workspaceTools(auth, projectId) : {}),
+                ...(needs.bot ? botTools(auth, projectId, origin) : {}),
+                ...(needs.db && projectId ? targetSupabaseTools(projectId) : {}),
+                ...intelTools(auth, projectId),
+                ...(needs.connectors ? connectorTools(projectId, auth.userId) : {}),
+                ...(needs.platform ? selfTools() : {}),
+                ...(needs.platform ? platformTools(auth) : {}),
               },
+              (name, value) => applyToolResult(lifecycle, name, value),
+              undefined,
+              {
+                userId: auth.userId,
+                projectId,
+              },
+            ),
+            stopWhen: [stepCountIs(platform.maxSteps || MAX_STEPS), budgetReached(startedAt)],
+            maxOutputTokens: resolveMaxOutputTokens(platform.maxTokens),
+
+            // بلا تفكير موسّع: يقلّل زمن الصمت قبل أول توكن ويسرّع دورة الأدوات
+            providerOptions: {
+              openrouter: { reasoning: { enabled: false } },
             },
+
             onStepFinish: () => {
               stepsUsed += 1;
             },
@@ -2247,7 +2822,7 @@ export const Route = createFileRoute("/api/chat")({
           return result.toUIMessageStreamResponse({
             originalMessages: messages as UIMessage[],
             sendReasoning: true,
-            headers: { "X-Weaver-Model": modelId },
+            headers: { "X-Weaver-Model": routed.modelId, "X-Weaver-Provider": routed.provider },
             // نُعلم الواجهة أن الجولة انتهت بسبب حد الخطوات/الوقت لا لأن العمل اكتمل،
             // فتستأنف تلقائياً بدل أن يتوقف البناء في المنتصف.
             messageMetadata: ({ part }) =>
@@ -2267,10 +2842,17 @@ export const Route = createFileRoute("/api/chat")({
             onError: (error) => {
               const message = error instanceof Error ? error.message : String(error);
               console.error("[weaver:stream]", message);
+              const learned = noteTokenBudgetError(error);
+              const degraded = noteOpenRouterUnavailable(error);
+              if (degraded) {
+                return `رصيد OpenRouter غير كافٍ الآن — حوّلت البناء تلقائياً إلى Gemini/Groq. أعد الإرسال وسيكمل من آخر حالة محفوظة.`;
+              }
+              if (learned) {
+                return `رصيد OpenRouter لا يسمح بحجم الرد المطلوب. خفّضت الحدّ تلقائياً إلى ${learned} توكن — أعد الإرسال وسيكمل البناء من آخر حالة محفوظة.`;
+              }
               return `انقطعت هذه الجولة بسبب خطأ من المزوّد: ${message}\n\nسيستأنف Weaver التنفيذ تلقائياً من آخر حالة محفوظة.`;
             },
           });
-
         } catch (error) {
           const message = error instanceof Error ? error.message : "OpenRouter error";
           return new Response(message, { status: 500 });

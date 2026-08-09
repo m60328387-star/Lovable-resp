@@ -17,7 +17,8 @@ export const Route = createFileRoute("/_authenticated/connectors")({
       { title: "إدارة الروابط الخارجية | Weaver" },
       {
         name: "description",
-        content: "فعّل أو عطّل روابط Weaver الخارجية، رتّب أولوياتها، وأرسل طلباً تجريبياً لمعاينة الاستجابة والزمن.",
+        content:
+          "فعّل أو عطّل روابط Weaver الخارجية، رتّب أولوياتها، وأرسل طلباً تجريبياً لمعاينة الاستجابة والزمن.",
       },
       { property: "og:title", content: "إدارة الروابط الخارجية | Weaver" },
       {
@@ -116,7 +117,9 @@ function ConnectorsPage() {
                 <input
                   type="checkbox"
                   checked={row.enabled}
-                  onChange={(event) => save.mutate({ connectorId: row.id, enabled: event.target.checked })}
+                  onChange={(event) =>
+                    save.mutate({ connectorId: row.id, enabled: event.target.checked })
+                  }
                 />
                 مفعّل
               </label>
@@ -139,7 +142,10 @@ function ConnectorsPage() {
                   min={1}
                   max={999}
                   onBlur={(event) =>
-                    save.mutate({ connectorId: row.id, priority: Number(event.target.value) || 100 })
+                    save.mutate({
+                      connectorId: row.id,
+                      priority: Number(event.target.value) || 100,
+                    })
                   }
                   className="w-16 rounded-md border bg-background px-1.5 py-0.5"
                 />
@@ -235,7 +241,9 @@ function ConnectorsPage() {
                   </span>
                 )}
               </div>
-              {testResult.error && <p className="text-[12px] text-destructive">{testResult.error}</p>}
+              {testResult.error && (
+                <p className="text-[12px] text-destructive">{testResult.error}</p>
+              )}
               <pre
                 dir="ltr"
                 className="max-h-72 overflow-auto rounded-lg bg-surface p-2 font-mono text-[11px] whitespace-pre-wrap"

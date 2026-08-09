@@ -65,9 +65,7 @@ export const enqueueAgentJob = createServerFn({ method: "POST" })
 /** مهام مشروع واحد — للاستطلاع اللحظي (polling) في الواجهة. */
 export const listProjectJobs = createServerFn({ method: "POST" })
   .middleware([requireWeaverAuth])
-  .inputValidator((input: unknown) =>
-    z.object({ projectId: z.string().uuid() }).parse(input),
-  )
+  .inputValidator((input: unknown) => z.object({ projectId: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     await ensureAgentJobs();
     const sql = getSql();
@@ -80,7 +78,14 @@ export const listProjectJobs = createServerFn({ method: "POST" })
     const active = (rows as unknown as Record<string, unknown>[]).filter((r) =>
       ["queued", "running"].includes(String(r["status"])),
     );
-    let events: Array<{ kind: string; label: string; ok: boolean | null; at: string; durationMs: number | null; attempt: number }> = [];
+    let events: Array<{
+      kind: string;
+      label: string;
+      ok: boolean | null;
+      at: string;
+      durationMs: number | null;
+      attempt: number;
+    }> = [];
     const current = active[0] ?? (rows as unknown as Record<string, unknown>[])[0];
     if (current) {
       const evRows = await sql`

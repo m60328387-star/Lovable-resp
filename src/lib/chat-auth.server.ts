@@ -10,9 +10,8 @@ export type AuthedContext = {
 
 /** يتحقق من جلسة التخويل المحلية (باسكود) ويبني عميل قاعدة بيانات محلي مقيّد بالمستخدم. */
 export async function authenticateRequest(_request?: Request): Promise<AuthedContext | null> {
-  const session = await useSession<{ owner?: { id: string; email: string } }>(
-    getSessionConfig(),
-  );
+  // eslint-disable-next-line react-hooks/rules-of-hooks -- useSession هنا أداة جلسة من TanStack Start وليست React hook
+  const session = await useSession<{ owner?: { id: string; email: string } }>(getSessionConfig());
   const userId = session.data?.owner?.id;
   if (!userId) return null;
 
