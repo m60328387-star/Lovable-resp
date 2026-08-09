@@ -1,0 +1,107 @@
+services:
+  app:
+    build:
+      context: ../
+      dockerfile: deploy/Dockerfile
+      args:
+        VITE_SUPABASE_URL: ${SUPABASE_URL}
+        VITE_SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY}
+    container_name: weaver-app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - NODE_ENV=production
+      - HOST=0.0.0.0
+      - PORT=3000
+      - WEAVER_BUILD_TARGET=node
+    ports:
+      - "127.0.0.1:${WEAVER_APP_PORT:-3010}:3000"
+    networks:
+      - weaver
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "fetch('http://127.0.0.1:3000/api/public/health').then(r=>r.json()).then(j=>process.exit(j.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    depends_on:
+      db:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    container_name: weaver-worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - WORKER_API_URL=http://app:3000
+      - WORKER_IDLE_INTERVAL_MS=${WORKER_IDLE_INTERVAL_MS:-5000}
+      - WORKER_CONCURRENCY=${WORKER_CONCURRENCY:-1}
+    networks:
+      - weaver
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "const fs=require('fs');const f='/tmp/worker-alive';process.exit(fs.existsSync(f)&&Date.now()-fs.statSync(f).mtimeMs<180000?0:1)"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      app:
+        condition: service_healthy
+
+
+  db:
+    image: postgres:17-alpine
+    container_name: weaver-db
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - weaver
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  nginx:
+    image: nginx:alpine
+    container_name: weaver-nginx
+    restart: unless-stopped
+    ports:
+      - "${WEAVER_HTTP_PORT:-8081}:80"
+      - "${WEAVER_HTTPS_PORT:-8443}:443"
+    volumes:
+      - ./nginx/init-ssl.sh:/init-ssl.sh:ro
+      - certbot-data:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+    networks:
+      - weaver
+    healthcheck:
+      test: ["CMD-SHELL", "nginx -t >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      app:
+        condition: service_healthy
+    command: "/bin/sh -c 'sh /init-ssl.sh && nginx -g \"daemon off;\"'"
+
+volumes:
+  pgdata:
+  certbot-data:
+  certbot-www:
+
+networks:
+  weaver:
+    driver: bridge

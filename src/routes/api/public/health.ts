@@ -1,0 +1,63 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { getSql } from "@/lib/db";
+
+/**
+ * فحص صحة عام للحاويات ولخطوة التحقق بعد النشر:
+ * يتحقق من قاعدة البيانات ومن وجود متغيّرات البيئة الحرجة.
+ */
+export const Route = createFileRoute("/api/public/health")({
+  server: {
+    handlers: {
+      GET: async () => {
+        const required = [
+          "DATABASE_URL",
+          "SESSION_SECRET",
+          "OPENROUTER_API_KEY",
+          "WEAVER_WORKER_TOKEN",
+          "WEAVER_PASSCODE",
+          "WEAVER_OWNER_EMAIL",
+          "SUPABASE_URL",
+          "SUPABASE_PUBLISHABLE_KEY",
+        ];
+        const missing = required.filter((name) => !(process.env[name] ?? "").trim());
+        const workerToken = (process.env["WEAVER_WORKER_TOKEN"] ?? "").trim();
+        if (workerToken && workerToken.length < 16) missing.push("WEAVER_WORKER_TOKEN(too_short)");
+
+        let db = false;
+        let dbError: string | null = null;
+        try {
+          await Promise.race([
+            Promise.resolve(getSql()`SELECT 1`),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error("db timeout")), 6000),
+            ),
+          ]);
+          db = true;
+        } catch (error) {
+          dbError = error instanceof Error ? error.message : String(error);
+        }
+
+        const ok = db && missing.length === 0;
+        if (!ok) {
+          try {
+            const { alertOnCriticalEnv } = await import("@/lib/alerts.server");
+            await alertOnCriticalEnv(db ? [] : [`تعذّر الاتصال بقاعدة البيانات: ${dbError ?? "غير معروف"}`]);
+          } catch {
+            /* التنبيه لا يُفشل فحص الصحة */
+          }
+        }
+        return Response.json(
+          {
+            ok,
+            db,
+            dbError,
+            missingEnv: missing,
+            uptimeSec: Math.round(process.uptime?.() ?? 0),
+            at: new Date().toISOString(),
+          },
+          { status: ok ? 200 : 503 },
+        );
+      },
+    },
+  },
+});

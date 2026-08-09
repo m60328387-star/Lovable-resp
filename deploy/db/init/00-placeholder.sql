@@ -1,0 +1,1 @@
+-- Local Postgres schema for full independence (migration from Supabase to be filled here).
