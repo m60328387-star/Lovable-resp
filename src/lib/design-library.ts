@@ -3,6 +3,8 @@
  * أشكال وأنماط خلفية، أنماط تخطيط، ولمسات ابتكارية أصلية (بدون اعتماديات خارجية).
  * تُحقن في نص النظام ليختار الوكيل منها بدل ارتجال ألوان وأشكال عشوائية.
  */
+import { ART_DIRECTION_KIT } from "./art-direction";
+
 
 export const COLOR_LIBRARY = `
 === مكتبة الألوان (اختر لوحة واحدة كاملة ولا تخلط بين لوحتين) ===
@@ -110,7 +112,8 @@ export const INNOVATION_LIBRARY = `
 export const DESIGN_LIBRARY = `
 
 === مكتبات التصميم المرجعية (اختر منها صراحةً وصرّح باختيارك قبل الكتابة) ===
-قبل أول ملف اكتب سطراً واحداً: «اللوحة: … | الخطوط: … | التخطيطات: … | الشكل المسيطر: … | اللمسة الابتكارية: …»
+قبل أول ملف اكتب سطراً واحداً: «الاتجاه: … | اللوحة: … | الخطوط: … | التخطيطات: … | الشكل المسيطر: … | اللمسة الابتكارية: …»
 ثم التزم به في كل الملفات.
-${COLOR_LIBRARY}${TYPE_LIBRARY}${ICON_LIBRARY}${SHAPE_LIBRARY}${LAYOUT_LIBRARY}${INNOVATION_LIBRARY}
+${COLOR_LIBRARY}${TYPE_LIBRARY}${ICON_LIBRARY}${SHAPE_LIBRARY}${LAYOUT_LIBRARY}${INNOVATION_LIBRARY}${ART_DIRECTION_KIT}
 `;
+
