@@ -69,9 +69,20 @@ function sqlLiteral(value: unknown): string {
   if (typeof value === "number") return Number.isFinite(value) ? String(value) : "NULL";
   if (typeof value === "boolean") return value ? "true" : "false";
   if (value instanceof Date) return `'${value.toISOString()}'`;
+  // البيانات الثنائية تُصدَّر بصيغة hex الرسمية بدل تحويلها إلى نص تالف.
+  if (value instanceof Uint8Array) {
+    return `'\\x${Buffer.from(value).toString("hex")}'::bytea`;
+  }
+  if (Array.isArray(value)) {
+    return `'${JSON.stringify(value).replace(/'/g, "''")}'`;
+  }
   const text = typeof value === "object" ? JSON.stringify(value) : String(value);
+  // الملف يبدأ بـ standard_conforming_strings = on، لذا الاقتباس المزدوج للفاصلة كافٍ
+  // ولا تُفسَّر الشرطة المائلة كهروب.
   return `'${text.replace(/'/g, "''")}'`;
 }
+
+const EXPORT_ROW_LIMIT = 50_000;
 
 function qid(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
@@ -118,6 +129,7 @@ export async function dumpProjectDatabase(
     `-- schema: ${schema}`,
     `-- generated: ${new Date().toISOString()}`,
     ``,
+    `SET standard_conforming_strings = on;`,
     `CREATE SCHEMA IF NOT EXISTS ${qid(schema)};`,
     `SET search_path = ${qid(schema)};`,
     ``,
@@ -133,9 +145,12 @@ export async function dumpProjectDatabase(
     parts.push(`CREATE TABLE IF NOT EXISTS ${qid(table)} (\n${defs.join(",\n")}\n);`, ``);
 
     const rows = (await sql.unsafe(
-      `select * from ${qid(schema)}.${qid(table)} limit 5000`,
+      `select * from ${qid(schema)}.${qid(table)} limit ${EXPORT_ROW_LIMIT}`,
     )) as unknown as Record<string, unknown>[];
     rowTotal += rows.length;
+    if (rows.length === EXPORT_ROW_LIMIT) {
+      parts.push(`-- تحذير: تم تصدير أول ${EXPORT_ROW_LIMIT} صف فقط من ${table} (الجدول أكبر).`);
+    }
     if (rows.length) {
       const names = cols.map((c) => c.column_name);
       const columnList = names.map(qid).join(", ");

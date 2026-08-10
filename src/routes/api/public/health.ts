@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { bearerToken, secretEquals } from "@/lib/token-compare";
 import { getSql } from "@/lib/db";
 
 /**
@@ -11,9 +12,10 @@ export const Route = createFileRoute("/api/public/health")({
       GET: async ({ request }) => {
         // التفاصيل التشغيلية (المتغيرات الناقصة، المزوّدون، القدرات) استطلاع مفيد
         // لمهاجم — تُعرض فقط لحاملي توكن العامل؛ العامة يرون ok/db فقط.
-        const authz = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
         const workerSecret = (process.env["WEAVER_WORKER_TOKEN"] ?? "").trim();
-        const detailed = Boolean(workerSecret) && authz === workerSecret;
+        const detailed =
+          Boolean(workerSecret) &&
+          secretEquals(bearerToken(request.headers.get("authorization")), workerSecret);
         const required = [
           "DATABASE_URL",
           "SESSION_SECRET",
@@ -91,7 +93,10 @@ export const Route = createFileRoute("/api/public/health")({
           }
         }
         if (!detailed) {
-          return Response.json({ ok, db, at: new Date().toISOString() }, { status: ok ? 200 : 503 });
+          return Response.json(
+            { ok, db, at: new Date().toISOString() },
+            { status: ok ? 200 : 503 },
+          );
         }
 
         return Response.json(

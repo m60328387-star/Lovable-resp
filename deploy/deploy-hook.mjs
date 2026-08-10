@@ -78,12 +78,53 @@ function safeEqual(a, b) {
   return timingSafeEqual(bufA, bufB);
 }
 
+/**
+ * قفل تصاعدي ضد تخمين رمز التنفيذ: الخطّاف يشغّل سكربتات بصلاحيات عالية،
+ * لذا نمنع أي عنوان بعد 5 محاولات فاشلة لمدة 15 دقيقة.
+ */
+const FAIL_LIMIT = 5;
+const FAIL_WINDOW_MS = 15 * 60 * 1000;
+const failures = new Map();
+
+function clientKey(req) {
+  return req.socket.remoteAddress || "unknown";
+}
+
+function isBlocked(key) {
+  const entry = failures.get(key);
+  if (!entry) return false;
+  if (Date.now() > entry.until) {
+    failures.delete(key);
+    return false;
+  }
+  return entry.count >= FAIL_LIMIT;
+}
+
+function noteFailure(key) {
+  const now = Date.now();
+  const entry = failures.get(key);
+  if (!entry || now > entry.until) {
+    failures.set(key, { count: 1, until: now + FAIL_WINDOW_MS });
+    return;
+  }
+  entry.count += 1;
+  entry.until = now + FAIL_WINDOW_MS;
+}
+
 const server = createServer(async (req, res) => {
+  const key = clientKey(req);
+  if (isBlocked(key)) {
+    res.writeHead(429).end("too many attempts");
+    return;
+  }
+
   const auth = req.headers.authorization || "";
-  if (!TOKEN || !safeEqual(auth, `Bearer ${TOKEN}`)) {
+  if (!TOKEN || TOKEN.length < 24 || !safeEqual(auth, `Bearer ${TOKEN}`)) {
+    noteFailure(key);
     res.writeHead(401).end("unauthorized");
     return;
   }
+  failures.delete(key);
 
   const statusMatch = req.url?.match(/^\/status\/([a-zA-Z0-9-]+)$/);
   if (req.method === "GET" && statusMatch) {
@@ -127,6 +168,10 @@ const server = createServer(async (req, res) => {
     const domain = String(input.domain || "").toLowerCase();
     const slug = String(input.slug || "").toLowerCase();
     const email = String(input.email || "");
+    if (email && !/^[^\s@]{1,64}@[a-z0-9.-]{3,190}\.[a-z]{2,20}$/i.test(email)) {
+      res.writeHead(400).end("invalid email");
+      return;
+    }
     if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(domain)) {
       res.writeHead(400).end("invalid domain");
       return;

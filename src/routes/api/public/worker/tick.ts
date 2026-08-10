@@ -3,6 +3,7 @@ import { convertToModelMessages, generateText, stepCountIs, type UIMessage } fro
 import { getOpenRouterModelId } from "@/lib/openrouter.server";
 import { resolveBuildModel, noteOpenRouterUnavailable } from "@/lib/build-provider.server";
 import { getSql } from "@/lib/db";
+import { bearerToken, secretEquals } from "@/lib/token-compare";
 import { compactMessages } from "@/lib/context-compaction";
 import { makeLocalSupabase } from "@/lib/local-supabase";
 import { estimateCostUsd } from "@/lib/pricing";
@@ -39,8 +40,7 @@ export const Route = createFileRoute("/api/public/worker/tick")({
         if (!token || token.length < 16) {
           return Response.json({ ok: false, error: "worker_token_missing" }, { status: 500 });
         }
-        const auth = request.headers.get("authorization") ?? "";
-        if (auth !== `Bearer ${token}`) {
+        if (!secretEquals(bearerToken(request.headers.get("authorization")), token)) {
           return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
         }
 
@@ -130,7 +130,9 @@ export const Route = createFileRoute("/api/public/worker/tick")({
             generateText({
               model: routed.model,
               system: buildWeaverSystem(skills, job.mode) + statusPrompt(lifecycle, buildIntent),
-              messages: await convertToModelMessages(compactMessages((job.messages ?? []) as UIMessage[])),
+              messages: await convertToModelMessages(
+                compactMessages((job.messages ?? []) as UIMessage[]),
+              ),
               tools,
               stopWhen: [stepCountIs(MAX_STEPS), () => Date.now() - startedAt > TIME_BUDGET_MS * 3],
               maxOutputTokens,
