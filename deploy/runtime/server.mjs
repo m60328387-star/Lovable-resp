@@ -206,6 +206,38 @@ async function startDev(projectId, overrideCommand) {
   const dir = workspaceDir(id);
   if (!existsSync(dir)) await mkdir(dir, { recursive: true });
 
+  // المشاريع المعتمدة على npm يجب أن تصبح قابلة للمعاينة دون خطوة يدوية.
+  // npm install تزايدي: يعيد استخدام node_modules والحجم المخبأ في مساحة المشروع.
+  const pkgPath = join(dir, "package.json");
+  const installLogs = [];
+  if (existsSync(pkgPath)) {
+    const installed = await runCommand(id, "npm install --no-audit --no-fund", MAX_EXEC_MS);
+    if (installed.output)
+      installLogs.push(`[runtime] $ npm install --no-audit --no-fund\n${installed.output}`);
+    if (!installed.ok) {
+      const entry = {
+        proc: { pid: 0, kill() {} },
+        port: 0,
+        command: "npm install --no-audit --no-fund",
+        mode: "install",
+        logs: installLogs,
+        startedAt: Date.now(),
+        ready: false,
+        exitCode: installed.exitCode,
+      };
+      servers.set(id, entry);
+      return {
+        ok: false,
+        mode: "install",
+        port: 0,
+        previewPath: `${PREVIEW_PREFIX}/${id}/`,
+        ready: false,
+        exitCode: installed.exitCode,
+        logs: installLogs.slice(-120),
+      };
+    }
+  }
+
   const port = await allocatePort();
   const detected = await detectStart(id, port);
   const command = overrideCommand || detected.command;
@@ -216,7 +248,7 @@ async function startDev(projectId, overrideCommand) {
       port: 0,
       command: "static",
       mode: "static",
-      logs: ["[runtime] لا يوجد package.json — تُخدَم الملفات الثابتة مباشرة."],
+      logs: [...installLogs, "[runtime] لا يوجد package.json — تُخدَم الملفات الثابتة مباشرة."],
       startedAt: Date.now(),
       ready: true,
       exitCode: null,
@@ -244,7 +276,7 @@ async function startDev(projectId, overrideCommand) {
     mode: detected.mode,
     // خوادم Vite تعمل تحت مسار أساس (base) فيجب إعادة إضافته عند التمرير.
     base: detected.mode === "vite" && !overrideCommand ? `${PREVIEW_PREFIX}/${id}` : "",
-    logs: [`[runtime] $ ${command}`],
+    logs: [...installLogs, `[runtime] $ ${command}`],
     startedAt: Date.now(),
     ready: false,
     exitCode: null,

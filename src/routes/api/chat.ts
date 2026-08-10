@@ -651,7 +651,7 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
     }),
     execute: async ({ command, timeoutSeconds }) => {
       if (!runtimeConfigured()) {
-        return { ok: false, error: "بيئة التنفيذ غير مفعّلة — استخدم run_command بدلاً منها." };
+        return { ok: false, error: "بيئة التنفيذ غير متاحة على هذه النسخة — لا تطلب من المستخدم تشغيلها ولا تتوقف. أكمل بأدوات: run_checks و fix_errors و visual_audit ثم publish_site." };
       }
       const { pid } = await syncRuntime();
       const result = await runtimeExec(pid, command, timeoutSeconds * 1000);
@@ -673,7 +673,7 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
     }),
     execute: async ({ action, command }) => {
       if (!runtimeConfigured()) {
-        return { ok: false, error: "بيئة التنفيذ غير مفعّلة على هذه النسخة." };
+        return { ok: false, error: "بيئة التنفيذ غير متاحة على هذه النسخة — لا تطلب من المستخدم تشغيلها ولا تتوقف. أكمل بأدوات: run_checks و fix_errors و visual_audit ثم publish_site." };
       }
       const { projectId: pid } = guard();
       if (action === "stop") return { ...(await runtimeDevStop(pid)), ok: true };
@@ -748,7 +748,7 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
     }),
     execute: async ({ path, devices }) => {
       if (!runtimeConfigured()) {
-        return { ok: false, error: "بيئة التنفيذ غير مفعّلة — استخدم visual_audit عبر المنفّذ." };
+        return { ok: false, error: "بيئة التنفيذ غير متاحة على هذه النسخة — لا تطلب من المستخدم تشغيلها ولا تتوقف. أكمل بأدوات: run_checks و fix_errors و visual_audit ثم publish_site." };
       }
       const result = await runBrowserCheck({ path, devices });
       return {
@@ -782,7 +782,7 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
         .describe("نطاقات مسموحة فقط، مثل ['ads.google.com','google.com'] (فارغ = بلا قيد)"),
     }),
     execute: async ({ url, allowlist }) => {
-      if (!runtimeConfigured()) return { ok: false, error: "بيئة التنفيذ غير مفعّلة." };
+      if (!runtimeConfigured()) return { ok: false, error: "بيئة التنفيذ غير متاحة على هذه النسخة — لا تطلب من المستخدم تشغيلها ولا تتوقف. أكمل بأدوات: run_checks و fix_errors و visual_audit ثم publish_site." };
       const { projectId: pid } = guard();
       const state = await browserOpen(pid, {
         ...(url ? { url } : {}),
@@ -900,7 +900,7 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
     }),
     execute: async ({ install, page }) => {
       if (!runtimeConfigured()) {
-        return { ok: false, error: "بيئة التنفيذ غير مفعّلة — استخدم fix_errors + run_checks." };
+        return { ok: false, error: "بيئة التنفيذ غير متاحة على هذه النسخة — لا تطلب من المستخدم تشغيلها ولا تتوقف. أكمل بأدوات: run_checks و fix_errors و visual_audit ثم publish_site." };
       }
       const { pid } = await syncRuntime();
       const steps: Array<{ step: string; ok: boolean; detail: string }> = [];
@@ -3031,7 +3031,7 @@ export function buildWeaverSystem(activeSkills: string[], mode: string, customPr
 }
 
 /** لقطة حالة المشروع الحقيقية تُحقن في كل جولة حتى لا يعيد النموذج عملاً منجزاً ولا يتوقف قبل الإغلاق. */
-function statusPrompt(state: LifecycleState, buildIntent: boolean) {
+function statusPrompt(state: LifecycleState, buildIntent: boolean, runtimeReady = true) {
   if (!buildIntent) return "";
   const next = nextBuildAction(state);
   const lines = [
@@ -3044,6 +3044,12 @@ function statusPrompt(state: LifecycleState, buildIntent: boolean) {
     `مراجعة بصرية ناجحة على النسخة الحالية: ${state.designPassed ? "نعم" : "لا"}`,
     `منشور: ${state.published ? "نعم" : "لا"}`,
   ];
+  if (!runtimeReady) {
+    lines.push(
+      "بيئة التنفيذ (المنفّذ) غير متاحة الآن: ممنوع طلب تشغيلها من المستخدم أو إنهاء المشروع بانتظارها.",
+      "أكمل البناء والتحقق عبر run_checks و fix_errors و visual_audit ثم انشر عبر publish_site.",
+    );
+  }
   if (next) {
     lines.push(
       `الخطوة التالية الإلزامية في هذه الجولة: ${next}`,
@@ -3263,7 +3269,7 @@ export const Route = createFileRoute("/api/chat")({
               (platformPrompt
                 ? `\n\nتعليمات إضافية من مالك المنصة (إلزامية):\n${platformPrompt}\n`
                 : "") +
-              statusPrompt(lifecycle, buildIntent) +
+              statusPrompt(lifecycle, buildIntent, runtimeConfigured()) +
               executionContext,
 
             // ضغط سياق ذكي: يمنع انفجار حجم الطلب في المشاريع الكبيرة
@@ -3289,6 +3295,22 @@ export const Route = createFileRoute("/api/chat")({
                 projectId,
               },
             ),
+            // بعض النماذج ترسل اسم أداة فارغاً أو غير مطابق — نصحّحه بدل إسقاط الجولة.
+            experimental_repairToolCall: async ({ toolCall, tools: available }) => {
+              const names = Object.keys(available);
+              const raw = String(toolCall.toolName ?? "").trim();
+              const match =
+                names.find((n) => n === raw) ??
+                names.find((n) => n.toLowerCase() === raw.toLowerCase()) ??
+                names.find((n) => raw && (n.includes(raw) || raw.includes(n)));
+              if (!match) {
+                // اسم أداة فارغ/غير معروف: وجّهه لأداة حالة غير ضارة بدل إسقاط الجولة كاملة.
+                if (names.includes("run_status"))
+                  return { ...toolCall, toolName: "run_status", input: "{}" };
+                return null;
+              }
+              return { ...toolCall, toolName: match };
+            },
             stopWhen: [stepCountIs(platform.maxSteps || MAX_STEPS), budgetReached(startedAt)],
             maxOutputTokens: resolveMaxOutputTokens(platform.maxTokens),
 

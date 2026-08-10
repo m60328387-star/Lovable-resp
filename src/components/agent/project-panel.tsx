@@ -54,6 +54,7 @@ import { clearTerminal, useTerminalEvents, type TerminalEvent } from "@/lib/term
 import { cn } from "@/lib/utils";
 import { RuntimePanel } from "@/components/agent/runtime-panel";
 import { BrowserPanel } from "@/components/agent/browser-panel";
+import { startRuntimeDev } from "@/lib/runtime.functions";
 
 type PreviewDevice = "desktop" | "tablet" | "mobile";
 
@@ -128,6 +129,11 @@ export function ProjectPanel({
   const [historyFor, setHistoryFor] = useState<string | null>(null);
   const [previewDevice, setDevice] = useState<PreviewDevice>("desktop");
   const [previewKey, setPreviewKey] = useState(0);
+  const [runtimePreviewState, setRuntimePreviewState] = useState<
+    "idle" | "starting" | "ready" | "failed"
+  >("idle");
+  const [runtimePreviewError, setRuntimePreviewError] = useState("");
+  const runtimeStartedFor = useRef<string | null>(null);
 
   const conversation = useQuery({
     queryKey: ["conversation", projectId, refreshKey],
@@ -172,6 +178,31 @@ export function ProjectPanel({
   const runs = workspace.data?.runs ?? [];
 
   const previewDoc = buildPreviewDocument(files);
+  const isRuntimeProject = files.some(
+    (file) => file.path.replace(/^\.\//, "").toLowerCase() === "package.json",
+  );
+  const runtimePreviewUrl = `/api/public/rt/${projectId}/?k=${previewKey}`;
+
+  useEffect(() => {
+    if (tab !== "preview" || !isRuntimeProject || runtimeStartedFor.current === projectId) return;
+    runtimeStartedFor.current = projectId;
+    setRuntimePreviewState("starting");
+    setRuntimePreviewError("");
+    void startRuntimeDev({ data: { projectId } })
+      .then((result) => {
+        if (!result.ready) {
+          setRuntimePreviewState("failed");
+          setRuntimePreviewError(result.logs?.slice(-8).join("\n") || "تعذّر تجهيز خادم التطوير.");
+          return;
+        }
+        setRuntimePreviewState("ready");
+        setPreviewKey((key) => key + 1);
+      })
+      .catch((error: unknown) => {
+        setRuntimePreviewState("failed");
+        setRuntimePreviewError(error instanceof Error ? error.message : String(error));
+      });
+  }, [isRuntimeProject, projectId, tab]);
 
   // فتح تبويب المعاينة تلقائياً أول مرة تصبح فيها معاينة متاحة
   const autoOpened = useRef(false);
@@ -564,7 +595,7 @@ export function ProjectPanel({
           ))}
 
         {tab === "preview" &&
-          (previewDoc ? (
+          (previewDoc || isRuntimeProject ? (
             <div className="flex h-full min-h-0 flex-col gap-2">
               <div className="flex items-center gap-2">
                 <button
@@ -654,15 +685,48 @@ export function ProjectPanel({
 
               <DomainCard projectId={projectId} published={Boolean(publishState.data?.published)} />
 
-              <div className="flex min-h-0 flex-1 justify-center overflow-auto rounded-lg border bg-surface p-2">
-                <iframe
-                  key={previewKey}
-                  title="معاينة المشروع"
-                  srcDoc={previewDoc}
-                  sandbox="allow-scripts allow-forms allow-popups"
-                  style={{ width: PREVIEW_WIDTHS[previewDevice] }}
-                  className="min-h-[420px] w-full max-w-full flex-1 rounded-md border bg-white shadow-soft"
-                />
+              <div className="relative flex min-h-0 flex-1 justify-center overflow-auto rounded-lg border bg-surface p-2">
+                {isRuntimeProject && runtimePreviewState === "starting" && (
+                  <div className="absolute inset-0 z-10 grid place-items-center bg-background/90">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="size-4 animate-spin" />
+                      جارٍ تثبيت الحزم وتشغيل المعاينة…
+                    </div>
+                  </div>
+                )}
+                {isRuntimeProject && runtimePreviewState === "failed" ? (
+                  <div className="m-auto max-w-xl rounded-lg border border-destructive/30 bg-card p-4 text-sm">
+                    <p className="mb-2 font-semibold text-destructive">تعذّر تشغيل المعاينة</p>
+                    <pre
+                      className="max-h-56 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-muted-foreground"
+                      dir="ltr"
+                    >
+                      {runtimePreviewError}
+                    </pre>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        runtimeStartedFor.current = null;
+                        setRuntimePreviewState("idle");
+                        setTab("runtime");
+                      }}
+                      className="mt-3 inline-flex items-center gap-1.5 rounded-lg border bg-card px-2.5 py-1.5 text-[11px] font-semibold hover:bg-surface"
+                    >
+                      <Terminal className="size-3" /> فتح بيئة التنفيذ
+                    </button>
+                  </div>
+                ) : (
+                  <iframe
+                    key={previewKey}
+                    title="معاينة المشروع"
+                    {...(isRuntimeProject
+                      ? { src: runtimePreviewUrl }
+                      : { srcDoc: previewDoc ?? "" })}
+                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+                    style={{ width: PREVIEW_WIDTHS[previewDevice] }}
+                    className="min-h-[420px] w-full max-w-full flex-1 rounded-md border bg-white shadow-soft"
+                  />
+                )}
               </div>
             </div>
           ) : (
