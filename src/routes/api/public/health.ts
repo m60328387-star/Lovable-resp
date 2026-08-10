@@ -35,6 +35,21 @@ export const Route = createFileRoute("/api/public/health")({
           dbError = error instanceof Error ? error.message : String(error);
         }
 
+        // حالة النسخ الاحتياطي (تحذيرية فقط — لا تُفشل فحص الصحة)
+        let backupAgeHours: number | null = null;
+        let backupAt: string | null = null;
+        try {
+          const { readFile } = await import("node:fs/promises");
+          const raw = (await readFile("/backups/last-success.txt", "utf8")).trim();
+          const ts = Date.parse(raw);
+          if (!Number.isNaN(ts)) {
+            backupAt = new Date(ts).toISOString();
+            backupAgeHours = Math.round(((Date.now() - ts) / 3_600_000) * 10) / 10;
+          }
+        } catch {
+          /* لا توجد نسخة بعد */
+        }
+
         const providers = {
           openrouter: Boolean((process.env["OPENROUTER_API_KEY"] ?? "").trim()),
           gemini: Boolean((process.env["GEMINI_API_KEY"] ?? "").trim()),
@@ -61,6 +76,7 @@ export const Route = createFileRoute("/api/public/health")({
             dbError,
             missingEnv: missing,
             providers,
+            backup: { at: backupAt, ageHours: backupAgeHours, stale: backupAgeHours === null || backupAgeHours > 48 },
             model: process.env["OPENROUTER_MODEL"] ?? null,
             uptimeSec: Math.round(process.uptime?.() ?? 0),
             at: new Date().toISOString(),

@@ -72,3 +72,21 @@ docker compose exec app sh
 # Update the executor token in the database, then restart the executor
 docker compose restart executor
 ```
+
+## أمان قاعدة البيانات (كونتابو = المصدر الأساسي)
+
+- قاعدة Postgres تعمل داخل Docker فقط، بلا منفذ منشور على الإنترنت (`db:5432` داخلياً فقط).
+- حاوية `backup` تأخذ نسخة `pg_dump` مضغوطة كل 24 ساعة إلى `/opt/weaver/backups`
+  مع الاحتفاظ بآخر 14 يوماً والتحقق من سلامة كل ملف (`gzip -t`).
+- كل عملية نشر تأخذ نسخة `pre-deploy-*.sql.gz` قبل أي تغيير، ومجلد `backups`
+  محميّ من التنظيف أثناء النشر.
+- الاسترجاع: `bash /opt/weaver/deploy/db/restore.sh` (آخر نسخة) أو مع اسم ملف محدد.
+  يأخذ نسخة أمان `pre-restore-*` قبل التنفيذ.
+- في الإنتاج لا يوجد رجوع صامت إلى Lovable Cloud: إن غاب `DATABASE_URL` يفشل التطبيق بوضوح.
+- `/api/public/health` يعرض عمر آخر نسخة احتياطية (`backup.ageHours`, `backup.stale`).
+- `deploy/.env` بصلاحيات `600` ومجلد النسخ `700`.
+
+### تنزيل نسخة إلى جهازك
+```
+scp -i <key> root@194.163.155.52:/opt/weaver/backups/latest.sql.gz ./
+```

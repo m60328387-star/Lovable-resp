@@ -136,6 +136,10 @@ $SSH "$SERVER" '
   tar xzf source.tar.gz
   rm -f source.tar.gz
   mv deploy.env deploy/.env
+  chmod 600 deploy/.env
+  mkdir -p /opt/weaver/backups
+  chmod 700 /opt/weaver/backups
+  chmod +x deploy/db/backup.sh deploy/db/restore.sh 2>/dev/null || true
   cd /opt/weaver/deploy
   docker compose up -d --build
   # ترحيلات إضافية idempotent على قاعدة بيانات قائمة (سكربتات init تعمل مرة واحدة فقط)

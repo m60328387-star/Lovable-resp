@@ -74,10 +74,21 @@ if [ -n "$CANDIDATE_RELEASE" ]; then
   printf '%s\n' "$CANDIDATE_RELEASE" > "$TMP/src/$RELEASE_FILE"
 fi
 
+BACKUP_DIR="${WEAVER_BACKUP_DIR:-$ROOT/backups}"
+mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
+
+echo "== نسخة احتياطية لقاعدة البيانات قبل النشر =="
+if [ -d "$ROOT/deploy" ]; then
+  (cd "$ROOT/deploy" && docker compose exec -T db pg_dump -U weaver -d weaver --clean --if-exists \
+    | gzip -9 > "$BACKUP_DIR/pre-deploy-$(date -u +%Y%m%d-%H%M%S).sql.gz") \
+    && echo "DB_BACKUP: ok" || echo "DB_BACKUP: skipped (قاعدة البيانات غير متاحة)"
+fi
+
 echo "== نسخة احتياطية للتراجع =="
 rm -rf "$BACKUP"
 mkdir -p "$BACKUP"
-tar cf - -C "$ROOT" --exclude=node_modules --exclude=.output --exclude=dist . | tar xf - -C "$BACKUP"
+tar cf - -C "$ROOT" --exclude=node_modules --exclude=.output --exclude=dist --exclude=backups . | tar xf - -C "$BACKUP"
 
 echo "== تحديث الكود =="
 # استبدال نظيف: قد يحتوي الإصدار الحالي على ملفات جذرية تخص موقع عميل
@@ -86,18 +97,21 @@ echo "== تحديث الكود =="
 SAVED_ENV="$(mktemp)"
 cp "$BACKUP/deploy/.env" "$SAVED_ENV"
 # احذف فقط عناصر الجذر الدخيلة التي لا وجود لها في نسخة Weaver الجديدة.
-# لا تحذف مجلد deploy الجاري تنفيذه، ثم انسخ النسخة الجديدة فوق الموجودة.
+# لا تحذف مجلد deploy الجاري تنفيذه ولا مجلد النسخ الاحتياطية.
 for current in "$ROOT"/* "$ROOT"/.[!.]* "$ROOT"/..?*; do
   [ -e "$current" ] || continue
   name="$(basename "$current")"
+  [ "$name" = "backups" ] && continue
   [ -e "$TMP/src/$name" ] || rm -rf "$current"
 done
 cp -a "$TMP/src/." "$ROOT/"
 # لا نسمح للكود المسحوب بأن يمسح أسرار الخادم
 mkdir -p "$(dirname "$ENV_FILE")"
 cp "$SAVED_ENV" "$ENV_FILE"
+chmod 600 "$ENV_FILE"
 rm -f "$SAVED_ENV"
 rm -rf "$TMP"
+chmod +x "$ROOT/deploy/db/backup.sh" "$ROOT/deploy/db/restore.sh" 2>/dev/null || true
 
 echo "== إعادة البناء =="
 cd "$ROOT/deploy"

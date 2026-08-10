@@ -6,11 +6,12 @@ import postgres from "postgres";
  * (keeps development previews working until the migration is complete).
  */
 export function getPostgresUrl(): string | undefined {
-  return (
-    process.env["DATABASE_URL"] ??
-    process.env["WEAVER_DB_URL"] ??
-    process.env["SUPABASE_DB_URL"]
-  );
+  const local = process.env["DATABASE_URL"] ?? process.env["WEAVER_DB_URL"];
+  if (local) return local;
+  // في الإنتاج (كونتابو) قاعدة البيانات المحلية هي المصدر الوحيد:
+  // ممنوع الرجوع الصامت إلى قاعدة Lovable Cloud حتى لا تنقسم البيانات.
+  if (process.env["NODE_ENV"] === "production") return undefined;
+  return process.env["SUPABASE_DB_URL"];
 }
 
 
