@@ -140,7 +140,7 @@ $SSH "$SERVER" '
   docker compose up -d --build
   # ترحيلات إضافية idempotent على قاعدة بيانات قائمة (سكربتات init تعمل مرة واحدة فقط)
   for i in $(seq 1 30); do docker compose exec -T db pg_isready -U weaver && break; sleep 2; done
-  for f in db/init/03-agent-jobs.sql db/init/04-audit-connectors.sql; do
+  for f in db/init/03-agent-jobs.sql db/init/04-audit-connectors.sql db/init/05-project-columns.sql; do
     [ -f "$f" ] && docker compose exec -T db psql -U weaver -d weaver -v ON_ERROR_STOP=1 < "$f"
   done
 '

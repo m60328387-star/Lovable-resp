@@ -105,7 +105,7 @@ cd "$ROOT/deploy"
 timeout 1500 docker compose up -d --build || echo "تحذير: انتهت مهلة docker compose up (يتابع التحقق أدناه)"
 
 for i in $(seq 1 30); do docker compose exec -T db pg_isready -U weaver >/dev/null 2>&1 && break; sleep 2; done
-for f in db/init/03-agent-jobs.sql db/init/04-audit-connectors.sql; do
+for f in db/init/03-agent-jobs.sql db/init/04-audit-connectors.sql db/init/05-project-columns.sql; do
   [ -f "$f" ] && docker compose exec -T db psql -U weaver -d weaver < "$f" >/dev/null 2>&1 || true
 done
 

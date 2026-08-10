@@ -6,8 +6,13 @@ import postgres from "postgres";
  * (keeps development previews working until the migration is complete).
  */
 export function getPostgresUrl(): string | undefined {
-  return process.env["DATABASE_URL"] ?? process.env["WEAVER_DB_URL"];
+  return (
+    process.env["DATABASE_URL"] ??
+    process.env["WEAVER_DB_URL"] ??
+    process.env["SUPABASE_DB_URL"]
+  );
 }
+
 
 let sqlInstance: postgres.Sql | null = null;
 
