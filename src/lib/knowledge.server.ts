@@ -95,6 +95,43 @@ function pathTags(path: string) {
   return keywords(path.replace(/[/\\.]/g, " "), 8);
 }
 
+let schemaReady: Promise<void> | null = null;
+
+/**
+ * يضمن وجود جدول المعرفة على أي قاعدة (الإنتاج القديم لا يمرّ بسكربتات init).
+ * يُنفَّذ مرة واحدة لكل عملية تشغيل.
+ */
+export function ensureKnowledgeSchema(): Promise<void> {
+  schemaReady ??= (async () => {
+    const sql = getSql();
+    await sql`
+      CREATE TABLE IF NOT EXISTS public.knowledge_entries (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id uuid NOT NULL,
+        project_id uuid,
+        kind text NOT NULL DEFAULT 'file',
+        title text NOT NULL,
+        path text,
+        language text,
+        tags text[] NOT NULL DEFAULT '{}',
+        summary text,
+        content text NOT NULL,
+        content_hash text NOT NULL,
+        uses integer NOT NULL DEFAULT 0,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )
+    `;
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS knowledge_entries_dedupe ON public.knowledge_entries(user_id, kind, content_hash)`;
+    await sql`CREATE INDEX IF NOT EXISTS knowledge_entries_user_recent ON public.knowledge_entries(user_id, updated_at DESC)`;
+    await sql`CREATE INDEX IF NOT EXISTS knowledge_entries_tags ON public.knowledge_entries USING gin(tags)`;
+  })().catch((error) => {
+    schemaReady = null;
+    throw error;
+  });
+  return schemaReady;
+}
+
 /** يلتقط قطعة معرفة واحدة (لا يرمي أبداً — الالتقاط مساعد وليس مساراً حرجاً). */
 export async function captureKnowledge(input: {
   userId: string;
@@ -118,6 +155,7 @@ export async function captureKnowledge(input: {
       ]),
     ).slice(0, 24);
 
+    await ensureKnowledgeSchema();
     const sql = getSql();
     await sql`
       INSERT INTO public.knowledge_entries
@@ -151,6 +189,7 @@ export async function searchKnowledge(input: {
     const terms = keywords(input.query, 12);
     if (terms.length === 0) return [];
     const like = `%${terms.slice(0, 3).join("%")}%`;
+    await ensureKnowledgeSchema();
     const sql = getSql();
     const rows = await sql<KnowledgeEntry[]>`
       SELECT id, kind, title, path, language, tags, summary, content, uses,
