@@ -15,7 +15,8 @@ export function runtimeToken() {
 }
 
 export function runtimeConfigured() {
-  return Boolean(runtimeToken() && runtimeToken().length >= 16);
+  const token = runtimeToken();
+  return Boolean(token && token.length >= 16 && token !== "replace-with-executor-token-from-app");
 }
 
 async function call<T>(
