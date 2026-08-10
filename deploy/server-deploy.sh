@@ -3,6 +3,15 @@
 # يسحب آخر كود من GitHub، يحتفظ بنسخة احتياطية للتراجع، ثم يعيد بناء الحاويات ويتحقق من الصحة.
 set -e
 
+# السكربت يستبدل ملفات المشروع (ومنها هذا الملف نفسه) أثناء التنفيذ،
+# وbash يقرأ الملف تدريجياً فيتعطّل. لذلك ننسخه إلى /tmp ونعيد تشغيله من هناك.
+if [ -z "${WEAVER_SELF_COPY:-}" ]; then
+  SELF_COPY="$(mktemp /tmp/weaver-deploy-XXXXXX.sh)"
+  cat "$0" > "$SELF_COPY"
+  chmod +x "$SELF_COPY"
+  WEAVER_SELF_COPY=1 exec bash "$SELF_COPY" "$@"
+fi
+
 ROOT="${WEAVER_ROOT:-/opt/weaver}"
 ENV_FILE="$ROOT/deploy/.env"
 BACKUP="${WEAVER_BACKUP:-/opt/weaver-prev}"
