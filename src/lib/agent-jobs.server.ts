@@ -208,12 +208,16 @@ export async function requeueForContinuation(
 ): Promise<void> {
   const sql = getSql();
   const history = Array.isArray(job.messages) ? (job.messages as unknown[]) : [];
+  // لا نسمح لتاريخ مهمة طويلة بالنمو بلا حد. حالة المشروع في الجداول والملفات،
+  // أما الرسائل فتبقى نافذة عمل قصيرة فقط.
+  const boundedHistory =
+    history.length > 16 ? [...history.slice(0, 2), ...history.slice(-12)] : history;
   const next = [
-    ...history,
+    ...boundedHistory,
     {
       id: `bg-assistant-${Date.now()}`,
       role: "assistant",
-      parts: [{ type: "text", text: assistantText || "(تابعت العمل)" }],
+      parts: [{ type: "text", text: (assistantText || "(تابعت العمل)").slice(0, 2000) }],
     },
     {
       id: `bg-continue-${Date.now()}`,

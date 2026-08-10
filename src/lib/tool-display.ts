@@ -1,5 +1,6 @@
 /** أسماء عربية مختصرة لكل أدوات الوكيل، تُستخدم في الدردشة والطرفية الحيّة. */
 export const TOOL_LABELS: Record<string, string> = {
+  design_blueprint: "تثبيت عقد التصميم",
   write_spec: "كتابة المواصفات",
   build_task_graph: "بناء رسم المهام",
   update_task: "تحديث مهمة",

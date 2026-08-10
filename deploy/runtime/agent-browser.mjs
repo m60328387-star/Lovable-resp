@@ -65,7 +65,11 @@ export async function openSession(projectId, options = {}) {
       viewport: VIEWPORT,
       locale: options.locale ?? "ar",
       timezoneId: options.timezone ?? "Asia/Beirut",
-      args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled"],
+      args: [
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-blink-features=AutomationControlled",
+      ],
     });
     const page = context.pages()[0] ?? (await context.newPage());
     session = {
@@ -123,7 +127,8 @@ setInterval(() => {
 
 async function navigate(session, url) {
   const target = /^https?:\/\//i.test(url) ? url : `https://${url}`;
-  if (!allowed(session, target)) throw new Error(`النطاق غير مسموح في هذه الجلسة: ${hostOf(target)}`);
+  if (!allowed(session, target))
+    throw new Error(`النطاق غير مسموح في هذه الجلسة: ${hostOf(target)}`);
   await session.page.goto(target, { waitUntil: "domcontentloaded", timeout: 45_000 });
   pushLog(session, { action: "goto", url: target });
 }
@@ -232,7 +237,10 @@ export async function act(projectId, action = {}) {
         await el.click({ timeout: 15_000 });
       } else if (action.text) {
         guard(action.text);
-        await page.getByText(String(action.text), { exact: false }).first().click({ timeout: 15_000 });
+        await page
+          .getByText(String(action.text), { exact: false })
+          .first()
+          .click({ timeout: 15_000 });
       } else {
         guard(action.label ?? "");
         await page.mouse.click(Number(action.x ?? 0), Number(action.y ?? 0));
@@ -278,7 +286,11 @@ export async function act(projectId, action = {}) {
   }
 
   await page.waitForTimeout(Number(action.settleMs ?? 500));
-  pushLog(session, { action: kind, actor, detail: action.text ?? action.url ?? action.selector ?? "" });
+  pushLog(session, {
+    action: kind,
+    actor,
+    detail: action.text ?? action.url ?? action.selector ?? "",
+  });
 
   if (!allowed(session, page.url())) {
     throw new Error(`الصفحة انتقلت إلى نطاق غير مسموح: ${hostOf(page.url())}`);

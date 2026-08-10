@@ -8,6 +8,7 @@ import { compactMessages } from "@/lib/context-compaction";
 import { makeLocalSupabase } from "@/lib/local-supabase";
 import { estimateCostUsd } from "@/lib/pricing";
 import { withTokenBudget } from "@/lib/token-budget.server";
+import { buildProjectExecutionContext } from "@/lib/project-execution.server";
 import {
   buildWeaverSystem,
   buildWeaverToolset,
@@ -68,7 +69,9 @@ export const Route = createFileRoute("/api/public/worker/tick")({
         const startedAt = Date.now();
 
         const lifecycle: LifecycleState = {
+          hasDesignBlueprint: false,
           hasTasks: false,
+          allTasksDone: false,
           hasFiles: false,
           checksPassed: false,
           designPassed: false,
@@ -78,8 +81,20 @@ export const Route = createFileRoute("/api/public/worker/tick")({
 
         if (projectId) {
           try {
-            const [taskRows, fileRows, projectRows, checkRows] = await Promise.all([
-              sql`SELECT count(*)::int AS count FROM public.tasks WHERE project_id = ${projectId}`,
+            const [
+              taskRows,
+              fileRows,
+              projectRows,
+              checkRows,
+              blueprintRows,
+              designRows,
+              latestFileRows,
+            ] = await Promise.all([
+              sql`
+                SELECT count(*)::int AS count,
+                       count(*) FILTER (WHERE status <> 'done')::int AS open_count
+                FROM public.tasks WHERE project_id = ${projectId}
+              `,
               sql`SELECT count(*)::int AS count FROM public.files WHERE project_id = ${projectId}`,
               sql`SELECT published FROM public.projects WHERE id = ${projectId} LIMIT 1`,
               sql`
@@ -87,15 +102,38 @@ export const Route = createFileRoute("/api/public/worker/tick")({
                 WHERE project_id = ${projectId} AND kind = 'check'
                 ORDER BY created_at DESC LIMIT 1
               `,
+              sql`
+                SELECT count(*)::int AS count FROM public.project_memory
+                WHERE project_id = ${projectId} AND key = 'design.blueprint'
+              `,
+              sql`
+                SELECT status, created_at FROM public.runs
+                WHERE project_id = ${projectId} AND kind = 'design'
+                ORDER BY created_at DESC LIMIT 1
+              `,
+              sql`
+                SELECT updated_at FROM public.files
+                WHERE project_id = ${projectId}
+                ORDER BY updated_at DESC LIMIT 1
+              `,
             ]);
-            lifecycle.hasTasks =
-              Number((taskRows[0] as { count?: number } | undefined)?.count ?? 0) > 0;
+            const taskSummary = taskRows[0] as { count?: number; open_count?: number } | undefined;
+            lifecycle.hasTasks = Number(taskSummary?.count ?? 0) > 0;
+            lifecycle.allTasksDone =
+              lifecycle.hasTasks && Number(taskSummary?.open_count ?? 0) === 0;
             lifecycle.hasFiles =
               Number((fileRows[0] as { count?: number } | undefined)?.count ?? 0) > 0;
             lifecycle.published =
               (projectRows[0] as { published?: boolean } | undefined)?.published === true;
             lifecycle.checksPassed =
               (checkRows[0] as { status?: string } | undefined)?.status === "passed";
+            lifecycle.hasDesignBlueprint =
+              Number((blueprintRows[0] as { count?: number } | undefined)?.count ?? 0) > 0;
+            const design = designRows[0] as { status?: string; created_at?: string } | undefined;
+            const latestFile = latestFileRows[0] as { updated_at?: string } | undefined;
+            const designAt = design?.created_at ? Date.parse(design.created_at) : 0;
+            const fileAt = latestFile?.updated_at ? Date.parse(latestFile.updated_at) : 0;
+            lifecycle.designPassed = design?.status === "passed" && fileAt - designAt <= 60_000;
           } catch (error) {
             console.error("[weaver:worker:lifecycle]", error);
           }
@@ -125,11 +163,15 @@ export const Route = createFileRoute("/api/public/worker/tick")({
               void setJobPhase(job.id, `${event.ok ? "نفّذ" : "أعاد المحاولة"}: ${event.name}`);
             },
           );
+          const executionContext = await buildProjectExecutionContext(supabase, projectId);
 
           const result = await withTokenBudget(async (maxOutputTokens) =>
             generateText({
               model: routed.model,
-              system: buildWeaverSystem(skills, job.mode) + statusPrompt(lifecycle, buildIntent),
+              system:
+                buildWeaverSystem(skills, job.mode) +
+                statusPrompt(lifecycle, buildIntent) +
+                executionContext,
               messages: await convertToModelMessages(
                 compactMessages((job.messages ?? []) as UIMessage[]),
               ),

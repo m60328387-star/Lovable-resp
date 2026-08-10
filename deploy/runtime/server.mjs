@@ -465,7 +465,6 @@ const server = http.createServer(async (req, res) => {
         return json(res, { sessions: ab.listSessions() });
       }
       case "/workspace/reset":
-
         await stopDev(projectId);
         await rm(workspaceDir(projectId), { recursive: true, force: true });
         return json(res, { ok: true });
