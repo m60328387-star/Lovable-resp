@@ -36,7 +36,18 @@ async function call<T>(
       signal: controller.signal,
     });
     const text = await res.text();
-    const json = text ? (JSON.parse(text) as T) : ({} as T);
+    const looksHtml = /^\s*<(?:!doctype|html)/i.test(text);
+    if (looksHtml || (!res.ok && res.status >= 502 && res.status <= 504)) {
+      throw new Error(
+        `بيئة التنفيذ غير متاحة حالياً (HTTP ${res.status}): البوابة (nginx) لم تصل إلى خدمة التنفيذ. أعد تشغيلها على الخادم: docker compose restart runtime`,
+      );
+    }
+    let json: T;
+    try {
+      json = text ? (JSON.parse(text) as T) : ({} as T);
+    } catch {
+      throw new Error(`ردّ غير متوقّع من بيئة التنفيذ (HTTP ${res.status}): ${text.slice(0, 300)}`);
+    }
     if (!res.ok) {
       const detail = (json as { error?: string })?.error ?? res.statusText;
       throw new Error(`بيئة التنفيذ ردّت ${res.status}: ${detail}`);
@@ -106,6 +117,8 @@ export const runtimeList = (projectId: string, limit = 500) =>
 export const runtimeRead = (projectId: string, path: string) =>
   call<{ content: string | null }>("/files/read", { projectId, path }, 30_000);
 
+import type { RawDesignMetrics } from "@/lib/design/metrics";
+
 export type BrowserDeviceResult = {
   device: string;
   url: string;
@@ -114,6 +127,7 @@ export type BrowserDeviceResult = {
   title: string;
   lang: string;
   issues: Array<{ level: "error" | "warn"; message: string }>;
+  metrics?: RawDesignMetrics | null;
   consoleErrors: string[];
   networkErrors: string[];
   screenshot: string | null;

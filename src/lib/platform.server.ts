@@ -145,6 +145,26 @@ export async function activePromptOverride(): Promise<string> {
 
 // ============ النشر والتراجع ============
 
+/** يحوّل صفحات أخطاء البوابة (nginx 502/504…) إلى رسالة مفهومة بدل إغراق المحادثة بـHTML. */
+export function describeHookResponse(status: number, body: string): string {
+  const text = (body ?? "").trim();
+  const looksHtml = /^<(?:!doctype|html)/i.test(text) || /<\/html>/i.test(text);
+  if (looksHtml || status === 502 || status === 503 || status === 504) {
+    const reason =
+      status === 504
+        ? "انتهت مهلة البوابة أثناء انتظار خطّاف النشر"
+        : status === 503
+          ? "خطّاف النشر غير متاح مؤقتاً (الخدمة متوقفة أو قيد إعادة التشغيل)"
+          : "لم تستطع البوابة (nginx) الوصول إلى خطّاف النشر";
+    return [
+      `فشل الاتصال بخطّاف النشر على الخادم (HTTP ${status}): ${reason}.`,
+      "تحقّق على كونتابو: systemctl status weaver-deploy-hook ثم systemctl restart weaver-deploy-hook",
+      "وتأكد أن nginx يمرّر المسار إلى 127.0.0.1:8790.",
+    ].join("\n");
+  }
+  return text.slice(0, 20000);
+}
+
 export type DeployResult = {
   ok: boolean;
   log: string;
@@ -152,6 +172,7 @@ export type DeployResult = {
   pending?: boolean;
   jobId?: string;
 };
+
 
 /**
  * ينفّذ النشر على الخادم عبر خطّاف النشر (webhook) الذي يشغّل deploy/deploy.sh.
@@ -219,7 +240,7 @@ export async function runDeployHook(
         log: "رفض الخطّاف المصادقة: EXECUTOR_TOKEN في التطبيق لا يطابق الموجود في deploy/.env على الخادم.",
       };
     }
-    return { ok: res.ok, status: res.status, log: response.slice(0, 20000) };
+    return { ok: res.ok, status: res.status, log: describeHookResponse(res.status, response) };
   } catch (error) {
     return { ok: false, status: 0, log: error instanceof Error ? error.message : String(error) };
   }

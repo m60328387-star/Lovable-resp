@@ -26,6 +26,14 @@ export const TOOL_LABELS: Record<string, string> = {
   design_review: "مراجعة التصميم",
   capture_reference: "التقاط مرجع",
   brand_kit: "توليد الهوية البصرية",
+  ui_snippet: "جلب مكوّن من مكتبة Weaver UI",
+  starter_kit: "اختيار طقم بداية",
+  copy_brief: "كتابة عقد النصوص",
+  copy_audit: "تدقيق النصوص",
+  design_directions: "اقتراح الاتجاهات البصرية",
+
+
+
   seo_kit: "تحسين محركات البحث",
   stack_plan: "اختيار المنظومة التقنية",
   promote_build: "ترقية البناء",

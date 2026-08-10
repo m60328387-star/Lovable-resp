@@ -10,6 +10,7 @@ import {
   PanelLeft,
   Rocket,
   ScrollText,
+  HeartPulse,
   Settings,
   ServerCog,
   Trash2,
@@ -222,6 +223,15 @@ export function AppShell({
           >
             <ScrollText className="size-3.5" />
           </Link>
+          <Link
+            to="/status"
+            aria-label="حالة الخدمات والنشر"
+            className="grid size-8 place-items-center rounded-lg border text-muted-foreground transition-colors hover:text-foreground"
+            activeProps={{ className: "text-primary border-primary/40" }}
+          >
+            <HeartPulse className="size-3.5" />
+          </Link>
+
 
           <Link
             to="/connectors"

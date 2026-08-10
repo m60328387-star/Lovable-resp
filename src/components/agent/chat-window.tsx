@@ -21,6 +21,7 @@ import { useServerFn } from "@tanstack/react-start";
 
 import { ProjectPanel } from "@/components/agent/project-panel";
 import { BuildStatusBar } from "@/components/agent/build-status";
+import { InfraHealthStrip } from "@/components/agent/infra-health-strip";
 import {
   SpecCard,
   TaskGraphCard,
@@ -772,6 +773,7 @@ function ChatSurface({
                 isLive={isBusy || bgActive}
               />
             )}
+            <InfraHealthStrip />
             {syncState !== "idle" && (
               <div className={cn("flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px]",syncState==="failed"?"border-destructive/40 bg-destructive/5 text-destructive":"bg-surface/60 text-muted-foreground")}>
                 {syncState === "completed" ? <CheckCircle2 className="size-3.5 text-primary" /> : syncState === "failed" ? <XCircle className="size-3.5" /> : <Loader2 className="size-3.5 animate-spin text-primary" />}

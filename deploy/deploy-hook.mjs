@@ -10,10 +10,51 @@
  */
 import { timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
-import { spawn } from "node:child_process";
-import { createWriteStream, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { spawn, execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { createWriteStream, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+const run = promisify(execFile);
+
+/** ينفّذ أمر تشخيص قصير ويعيد مخرجاته بلا رمي استثناء. */
+async function sh(cmd, args, timeout = 8000) {
+  try {
+    const { stdout, stderr } = await run(cmd, args, { timeout, maxBuffer: 4 * 1024 * 1024 });
+    return { ok: true, out: `${stdout || ""}${stderr || ""}`.trim() };
+  } catch (error) {
+    return { ok: false, out: String(error?.stdout || error?.message || error).trim() };
+  }
+}
+
+/** آخر مهمة نشر مسجّلة على القرص مع آخر 200 سطر من سجلّها. */
+function lastDeployJob(lines = 200) {
+  try {
+    const files = readdirSync(JOB_DIR)
+      .filter((name) => name.endsWith(".json"))
+      .map((name) => ({ name, at: statSync(resolve(JOB_DIR, name)).mtimeMs }))
+      .sort((a, b) => b.at - a.at);
+    const newest = files[0];
+    if (!newest) return null;
+    const id = newest.name.replace(/\.json$/, "");
+    const state = JSON.parse(readFileSync(jobPath(id, "json"), "utf8"));
+    let log = "";
+    try {
+      log = readFileSync(jobPath(id, "log"), "utf8");
+    } catch {
+      log = "";
+    }
+    const tail = log.split("\n").slice(-lines).join("\n");
+    const failures = tail
+      .split("\n")
+      .filter((line) => /error|fatal|failed|exit=[1-9]|npm ERR!|denied|not found/i.test(line))
+      .slice(-12);
+    return { ...state, log: tail, failures };
+  } catch {
+    return null;
+  }
+}
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "..");
@@ -154,6 +195,71 @@ const server = createServer(async (req, res) => {
     res.end(JSON.stringify({ ok: true, activeJob, activeSince, time: new Date().toISOString() }));
     return;
   }
+
+  // تشخيص شامل: حالة الخدمات على كونتابو + آخر مهمة نشر مع آخر 200 سطر.
+  if (req.method === "GET" && req.url?.startsWith("/diag")) {
+    const [nginx, runtime, app, worker, disk, uptime] = await Promise.all([
+      sh("docker", ["inspect", "-f", "{{.State.Status}}", "weaver-nginx"]),
+      sh("docker", ["inspect", "-f", "{{.State.Status}}", "weaver-runtime"]),
+      sh("docker", ["inspect", "-f", "{{.State.Status}}", "weaver-app"]),
+      sh("docker", ["inspect", "-f", "{{.State.Status}}", "weaver-worker"]),
+      sh("df", ["-h", "/"]),
+      sh("uptime", ["-p"]),
+    ]);
+    const container = (probe) => ({
+      ok: probe.ok && /^running/.test(probe.out),
+      detail: probe.out.slice(0, 400) || "غير متاح",
+    });
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+    res.end(
+      JSON.stringify({
+        ok: true,
+        time: new Date().toISOString(),
+        hook: { ok: true, activeJob, activeSince, uptime: uptime.out },
+        containers: {
+          nginx: container(nginx),
+          runtime: container(runtime),
+          app: container(app),
+          worker: container(worker),
+        },
+        disk: disk.out.split("\n").slice(0, 3).join("\n"),
+        lastDeploy: lastDeployJob(200),
+      }),
+    );
+    return;
+  }
+
+  // إعادة تشغيل خدمة محدّدة عند ظهور 502/503 من البوابة.
+  if (req.method === "POST" && req.url === "/restart") {
+    let raw = "";
+    for await (const chunk of req) raw += chunk;
+    let input = {};
+    try {
+      input = raw ? JSON.parse(raw) : {};
+    } catch {
+      input = {};
+    }
+    const service = String(input.service || "");
+    const allowed = { nginx: "weaver-nginx", runtime: "weaver-runtime", app: "weaver-app", worker: "weaver-worker" };
+    if (service === "deploy-hook") {
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ ok: true, service, detail: "سيُعاد تشغيل خطّاف النشر خلال ثانية." }));
+      setTimeout(() => {
+        void sh("systemctl", ["restart", "weaver-deploy-hook"], 15000).then(() => process.exit(0));
+      }, 800);
+      return;
+    }
+    const container = allowed[service];
+    if (!container) {
+      res.writeHead(400).end("unknown service");
+      return;
+    }
+    const result = await sh("docker", ["restart", container], 90000);
+    res.writeHead(result.ok ? 200 : 500, { "Content-Type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify({ ok: result.ok, service, detail: result.out.slice(0, 2000) }));
+    return;
+  }
+
 
   // ربط دومين مخصّص بموقع منشور: يشغّل deploy/add-domain.sh (nginx + certbot).
   if (req.method === "POST" && req.url === "/domain") {

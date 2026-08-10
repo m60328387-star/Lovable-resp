@@ -3,6 +3,8 @@
  * ورموز SVG، وملف tokens.css، ودليل هوية — بلا أي اعتماديات خارجية.
  */
 
+import { uiLibraryFiles } from "@/lib/design/ui-library";
+
 export interface BrandKitInput {
   brandName: string;
   /** كلمة/كلمتان تصفان طابع العلامة: technical, warm, luxury, playful, natural, medical, editorial */
@@ -400,20 +402,25 @@ ${Object.entries(palette)
 
   const usage = `<!-- ألصق هذا في <head> كل صفحة -->
 ${linkSnippet}
-<link rel="stylesheet" href="/brand/tokens.css">
-<link rel="icon" href="/brand/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="brand/tokens.css">
+<link rel="stylesheet" href="brand/ui.css">
+<link rel="icon" href="brand/favicon.svg" type="image/svg+xml">
 <meta name="theme-color" content="${palette["primary"]}">
+<!-- وقبل </body>: -->
+<!-- <script src="brand/ui.js" defer></script> -->
 `;
 
   return {
     files: [
       { path: "brand/tokens.css", content: tokens },
+      ...uiLibraryFiles(),
       { path: "brand/logo.svg", content: logo },
       { path: "brand/wordmark.svg", content: wordmark },
       { path: "brand/favicon.svg", content: favicon },
       { path: "brand/BRAND.md", content: guide },
       { path: "brand/head.html", content: usage },
     ],
+
     palette,
     fonts: { head, body, mono, linkSnippet },
     summary: `هوية «${input.brandName}» بطابع ${personality}: أساسي ${palette["primary"]} وتمييز ${palette["accent"]} وخط ${head}. تباين النص ${contrastText}:1.`,
