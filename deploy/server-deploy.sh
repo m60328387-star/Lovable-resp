@@ -38,6 +38,36 @@ if [ ${#EXECUTOR_TOKEN_VALUE} -lt 16 ] || [ "$EXECUTOR_TOKEN_VALUE" = "replace-w
   unset GENERATED_EXECUTOR_TOKEN
 fi
 
+# ====== شبكة أمان الذاكرة: ملف swap دائم ======
+# خادم واحد يحمل المنصة والبناء معاً، وذروة npm/vite قد تستهلك الرام كاملة.
+# ننشئ swap مرة واحدة (idempotent) ونثبّته في fstab ليبقى بعد إعادة التشغيل.
+SWAP_FILE="${WEAVER_SWAP_FILE:-/swapfile}"
+SWAP_SIZE="${WEAVER_SWAP_SIZE:-4G}"
+ensure_swap() {
+  if [ "$(id -u)" != "0" ]; then return 0; fi
+  if [ "$(swapon --show --noheadings 2>/dev/null | wc -l)" -gt 0 ]; then
+    echo "== swap: مفعّل مسبقاً =="
+    return 0
+  fi
+  echo "== swap: إنشاء $SWAP_FILE بحجم $SWAP_SIZE =="
+  if [ ! -f "$SWAP_FILE" ]; then
+    fallocate -l "$SWAP_SIZE" "$SWAP_FILE" 2>/dev/null \
+      || dd if=/dev/zero of="$SWAP_FILE" bs=1M count=4096 status=none || return 0
+  fi
+  chmod 600 "$SWAP_FILE"
+  mkswap "$SWAP_FILE" >/dev/null 2>&1 || true
+  swapon "$SWAP_FILE" 2>/dev/null || { echo "== swap: تعذّر التفعيل (بيئة مقيّدة) =="; return 0; }
+  grep -q "^$SWAP_FILE " /etc/fstab 2>/dev/null || echo "$SWAP_FILE none swap sw 0 0" >> /etc/fstab
+  # الاعتماد على القرص فقط عند الضرورة، مع إبقاء الكاش نشطاً.
+  sysctl -w vm.swappiness=10 >/dev/null 2>&1 || true
+  sysctl -w vm.vfs_cache_pressure=50 >/dev/null 2>&1 || true
+  grep -q '^vm.swappiness' /etc/sysctl.conf 2>/dev/null \
+    || printf 'vm.swappiness=10\nvm.vfs_cache_pressure=50\n' >> /etc/sysctl.conf
+  echo "== swap: جاهز =="
+}
+ensure_swap
+
+
 REPO_URL="$(read_env GITHUB_REPO_URL)"
 TOKEN="$(read_env GITHUB_TOKEN)"
 REF="${1:-}"

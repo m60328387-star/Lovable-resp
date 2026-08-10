@@ -206,6 +206,7 @@ const server = createServer(async (req, res) => {
       sh("df", ["-h", "/"]),
       sh("uptime", ["-p"]),
     ]);
+    const [mem, swap] = await Promise.all([sh("free", ["-m"]), sh("swapon", ["--show"])]);
     const container = (probe) => ({
       ok: probe.ok && /^running/.test(probe.out),
       detail: probe.out.slice(0, 400) || "غير متاح",
@@ -223,6 +224,8 @@ const server = createServer(async (req, res) => {
           worker: container(worker),
         },
         disk: disk.out.split("\n").slice(0, 3).join("\n"),
+        memory: mem.out.split("\n").slice(0, 3).join("\n"),
+        swap: swap.out.trim() || "غير مفعّل",
         lastDeploy: lastDeployJob(200),
       }),
     );
