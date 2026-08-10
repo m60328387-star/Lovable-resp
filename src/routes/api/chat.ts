@@ -59,6 +59,8 @@ import {
   runtimeDevStatus,
   runtimeDevStop,
   runtimeExec,
+  runtimeList,
+  runtimeRead,
   runtimeSync,
 } from "@/lib/runtime.server";
 import {
@@ -641,6 +643,40 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
     return { pid, count: files.length };
   };
 
+  /** يعيد الملفات التي أنشأتها أو عدّلتها أوامر الحاوية إلى مساحة المشروع المحفوظة. */
+  const pullRuntimeFiles = async (pid: string) => {
+    const { supabase, userId } = guard();
+    const listed = await runtimeList(pid, 800);
+    let synced = 0;
+    for (const file of listed.files) {
+      if (file.bytes > 2_000_000) continue;
+      const read = await runtimeRead(pid, file.path);
+      if (read.content === null) continue;
+      const { data: existing } = await supabase
+        .from("files")
+        .select("id, version, content")
+        .eq("project_id", pid)
+        .eq("path", file.path)
+        .maybeSingle();
+      if (existing?.content === read.content) continue;
+      if (existing) {
+        await supabase
+          .from("files")
+          .update({ content: read.content, version: existing.version + 1 })
+          .eq("id", existing.id);
+      } else {
+        await supabase.from("files").insert({
+          project_id: pid,
+          user_id: userId,
+          path: file.path,
+          content: read.content,
+        });
+      }
+      synced += 1;
+    }
+    return synced;
+  };
+
   const shell = tool({
     description:
       "ينفّذ أمر shell داخل حاوية تنفيذ حقيقية خاصة بالمشروع (Node 22 + npm + git + python). يزامن ملفات المشروع أولاً ثم يعيد المخرجات ورمز الخروج. استخدمه لـ npm install / npm run build / npx vitest.",
@@ -651,15 +687,21 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
     }),
     execute: async ({ command, timeoutSeconds }) => {
       if (!runtimeConfigured()) {
-        return { ok: false, error: "بيئة التنفيذ غير متاحة على هذه النسخة — لا تطلب من المستخدم تشغيلها ولا تتوقف. أكمل بأدوات: run_checks و fix_errors و visual_audit ثم publish_site." };
+        return {
+          ok: false,
+          error:
+            "بيئة التنفيذ غير متاحة على هذه النسخة — لا تطلب من المستخدم تشغيلها ولا تتوقف. أكمل بأدوات: run_checks و fix_errors و visual_audit ثم publish_site.",
+        };
       }
       const { pid } = await syncRuntime();
       const result = await runtimeExec(pid, command, timeoutSeconds * 1000);
+      const synced = await pullRuntimeFiles(pid);
       return {
         ok: result.ok,
         exitCode: result.exitCode,
         durationMs: result.durationMs,
         output: result.output.slice(-20_000),
+        synced,
       };
     },
   });
@@ -673,7 +715,11 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
     }),
     execute: async ({ action, command }) => {
       if (!runtimeConfigured()) {
-        return { ok: false, error: "بيئة التنفيذ غير متاحة على هذه النسخة — لا تطلب من المستخدم تشغيلها ولا تتوقف. أكمل بأدوات: run_checks و fix_errors و visual_audit ثم publish_site." };
+        return {
+          ok: false,
+          error:
+            "بيئة التنفيذ غير متاحة على هذه النسخة — لا تطلب من المستخدم تشغيلها ولا تتوقف. أكمل بأدوات: run_checks و fix_errors و visual_audit ثم publish_site.",
+        };
       }
       const { projectId: pid } = guard();
       if (action === "stop") return { ...(await runtimeDevStop(pid)), ok: true };
@@ -748,7 +794,11 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
     }),
     execute: async ({ path, devices }) => {
       if (!runtimeConfigured()) {
-        return { ok: false, error: "بيئة التنفيذ غير متاحة على هذه النسخة — لا تطلب من المستخدم تشغيلها ولا تتوقف. أكمل بأدوات: run_checks و fix_errors و visual_audit ثم publish_site." };
+        return {
+          ok: false,
+          error:
+            "بيئة التنفيذ غير متاحة على هذه النسخة — لا تطلب من المستخدم تشغيلها ولا تتوقف. أكمل بأدوات: run_checks و fix_errors و visual_audit ثم publish_site.",
+        };
       }
       const result = await runBrowserCheck({ path, devices });
       return {
@@ -782,7 +832,12 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
         .describe("نطاقات مسموحة فقط، مثل ['ads.google.com','google.com'] (فارغ = بلا قيد)"),
     }),
     execute: async ({ url, allowlist }) => {
-      if (!runtimeConfigured()) return { ok: false, error: "بيئة التنفيذ غير متاحة على هذه النسخة — لا تطلب من المستخدم تشغيلها ولا تتوقف. أكمل بأدوات: run_checks و fix_errors و visual_audit ثم publish_site." };
+      if (!runtimeConfigured())
+        return {
+          ok: false,
+          error:
+            "بيئة التنفيذ غير متاحة على هذه النسخة — لا تطلب من المستخدم تشغيلها ولا تتوقف. أكمل بأدوات: run_checks و fix_errors و visual_audit ثم publish_site.",
+        };
       const { projectId: pid } = guard();
       const state = await browserOpen(pid, {
         ...(url ? { url } : {}),
@@ -900,7 +955,11 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
     }),
     execute: async ({ install, page }) => {
       if (!runtimeConfigured()) {
-        return { ok: false, error: "بيئة التنفيذ غير متاحة على هذه النسخة — لا تطلب من المستخدم تشغيلها ولا تتوقف. أكمل بأدوات: run_checks و fix_errors و visual_audit ثم publish_site." };
+        return {
+          ok: false,
+          error:
+            "بيئة التنفيذ غير متاحة على هذه النسخة — لا تطلب من المستخدم تشغيلها ولا تتوقف. أكمل بأدوات: run_checks و fix_errors و visual_audit ثم publish_site.",
+        };
       }
       const { pid } = await syncRuntime();
       const steps: Array<{ step: string; ok: boolean; detail: string }> = [];
@@ -965,71 +1024,47 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
 
   const runCommand = tool({
     description:
-      "ينفّذ أمر shell حقيقياً على المنفّذ المتصل (npm install / build / test / git). ينتظر النتيجة ويعيد المخرجات ورمز الخروج. إن لم يكن هناك منفّذ متصل يبقى الأمر في الطابور ويُنفَّذ فور اتصال المنفّذ.",
+      "ينفّذ أمر shell حقيقياً داخل حاوية المشروع الدائمة (npm install / build / test / git)، ثم يعيد الملفات الناتجة إلى مساحة المشروع المحفوظة. لا يحتاج منفّذاً خارجياً.",
     inputSchema: z.object({
       command: z.string().describe("الأمر المراد تشغيله"),
       reason: z.string().describe("لماذا هذا الأمر ولأي مهمة"),
       waitSeconds: z.number().int().min(0).max(240).default(120),
     }),
     execute: async ({ command, reason, waitSeconds }) => {
-      const { supabase, userId, projectId: pid } = guard();
-
-      const since = new Date(Date.now() - 90_000).toISOString();
-      const { data: executor } = await supabase
-        .from("executors")
-        .select("id, name")
-        .gt("last_seen_at", since)
-        .limit(1)
-        .maybeSingle();
-
-      const { data: run, error } = await supabase
+      if (!runtimeConfigured()) {
+        return {
+          ok: false,
+          status: "unavailable",
+          error: "حاوية التنفيذ الداخلية غير مهيّأة على الخادم.",
+        };
+      }
+      const { supabase, userId } = guard();
+      const { pid } = await syncRuntime();
+      const timeoutMs = Math.max(5_000, Math.min(waitSeconds || 120, 600) * 1000);
+      const result = await runtimeExec(pid, command, timeoutMs);
+      const synced = await pullRuntimeFiles(pid);
+      const status = result.ok ? "success" : "failed";
+      const { data: run } = await supabase
         .from("runs")
         .insert({
           project_id: pid,
           user_id: userId,
           kind: "command",
           input: { command, reason },
-          status: "queued",
+          status,
+          exit_code: result.exitCode,
+          output: result.output.slice(-60_000),
         })
         .select("id")
         .single();
-      if (error) throw new Error(error.message);
-
-      if (!executor || waitSeconds === 0) {
-        return {
-          runId: run.id,
-          command,
-          status: "queued",
-          message: executor
-            ? `الأمر في الطابور على المنفّذ ${executor.name}. تابعه بـ run_status.`
-            : "لا يوجد منفّذ متصل الآن — الأمر محفوظ في الطابور وسيُنفَّذ فور اتصال خادمك. أخبر المستخدم بذلك.",
-        };
-      }
-
-      const deadline = Date.now() + waitSeconds * 1000;
-      while (Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 2500));
-        const { data: row } = await supabase
-          .from("runs")
-          .select("status, output, exit_code")
-          .eq("id", run.id)
-          .maybeSingle();
-        if (row && (row.status === "success" || row.status === "failed")) {
-          return {
-            runId: run.id,
-            command,
-            status: row.status,
-            exitCode: row.exit_code,
-            output: (row.output ?? "").slice(-12_000),
-          };
-        }
-      }
-
       return {
-        runId: run.id,
+        ok: result.ok,
+        runId: run?.id ?? null,
         command,
-        status: "running",
-        message: "ما زال قيد التنفيذ — استخدم run_status للاطلاع على النتيجة لاحقاً.",
+        status,
+        exitCode: result.exitCode,
+        output: result.output.slice(-12_000),
+        synced,
       };
     },
   });
@@ -1375,17 +1410,23 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
   });
 
   const runStatus = tool({
-    description: "يعرض حالة ومخرجات أمر سابق أُرسل إلى المنفّذ عبر run_command.",
-    inputSchema: z.object({ runId: z.string().uuid() }),
+    description:
+      "يعرض حالة ومخرجات أمر سابق من run_command. يمكن حذف runId لقراءة أحدث أمر في المشروع.",
+    inputSchema: z.object({ runId: z.string().uuid().optional() }),
     execute: async ({ runId }) => {
-      const { supabase } = guard();
-      const { data } = await supabase
+      const { supabase, projectId: pid } = guard();
+      let query = supabase
         .from("runs")
-        .select("status, output, exit_code, input")
-        .eq("id", runId)
-        .maybeSingle();
+        .select("id, status, output, exit_code, input")
+        .eq("project_id", pid)
+        .eq("kind", "command");
+      query = runId
+        ? query.eq("id", runId)
+        : query.order("created_at", { ascending: false }).limit(1);
+      const { data } = await query.maybeSingle();
       if (!data) return { error: "الأمر غير موجود." };
       return {
+        runId: data.id,
         status: data.status,
         exitCode: data.exit_code,
         command: ((data.input ?? {}) as { command?: string }).command ?? "",
@@ -3296,7 +3337,7 @@ export const Route = createFileRoute("/api/chat")({
               },
             ),
             // بعض النماذج ترسل اسم أداة فارغاً أو غير مطابق — نصحّحه بدل إسقاط الجولة.
-            experimental_repairToolCall: async ({ toolCall, tools: available }) => {
+            repairToolCall: async ({ toolCall, tools: available }) => {
               const names = Object.keys(available);
               const raw = String(toolCall.toolName ?? "").trim();
               const match =
@@ -3304,10 +3345,15 @@ export const Route = createFileRoute("/api/chat")({
                 names.find((n) => n.toLowerCase() === raw.toLowerCase()) ??
                 names.find((n) => raw && (n.includes(raw) || raw.includes(n)));
               if (!match) {
-                // اسم أداة فارغ/غير معروف: وجّهه لأداة حالة غير ضارة بدل إسقاط الجولة كاملة.
-                if (names.includes("run_status"))
-                  return { ...toolCall, toolName: "run_status", input: "{}" };
+                // لا نحوّل الاسم الفارغ إلى أداة تحتاج مُدخلات. قراءة الملفات نقطة استرجاع آمنة.
+                if (names.includes("list_files"))
+                  return { ...toolCall, toolName: "list_files", input: "{}" };
+                if (names.includes("memory_list"))
+                  return { ...toolCall, toolName: "memory_list", input: "{}" };
                 return null;
+              }
+              if (match === "run_status" && (!toolCall.input || toolCall.input === "{}")) {
+                return { ...toolCall, toolName: match, input: "{}" };
               }
               return { ...toolCall, toolName: match };
             },

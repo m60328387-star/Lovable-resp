@@ -183,6 +183,14 @@ export function ProjectPanel({
   );
   const runtimePreviewUrl = `/api/public/rt/${projectId}/?k=${previewKey}`;
 
+  const retryRuntimePreview = () => {
+    runtimeStartedFor.current = null;
+    setRuntimePreviewState("idle");
+    setRuntimePreviewError("");
+    setTab("preview");
+    setPreviewKey((key) => key + 1);
+  };
+
   useEffect(() => {
     if (tab !== "preview" || !isRuntimeProject || runtimeStartedFor.current === projectId) return;
     runtimeStartedFor.current = projectId;
@@ -706,13 +714,11 @@ export function ProjectPanel({
                     <button
                       type="button"
                       onClick={() => {
-                        runtimeStartedFor.current = null;
-                        setRuntimePreviewState("idle");
-                        setTab("runtime");
+                        retryRuntimePreview();
                       }}
                       className="mt-3 inline-flex items-center gap-1.5 rounded-lg border bg-card px-2.5 py-1.5 text-[11px] font-semibold hover:bg-surface"
                     >
-                      <Terminal className="size-3" /> فتح بيئة التنفيذ
+                      <RefreshCw className="size-3" /> إعادة المحاولة
                     </button>
                   </div>
                 ) : (

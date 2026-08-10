@@ -4,6 +4,7 @@
 
 import http from "node:http";
 import net from "node:net";
+import { createHash } from "node:crypto";
 import { spawn, exec } from "node:child_process";
 import { mkdir, writeFile, readFile, rm, readdir, stat } from "node:fs/promises";
 import { existsSync, createReadStream } from "node:fs";
@@ -209,11 +210,26 @@ async function startDev(projectId, overrideCommand) {
   // المشاريع المعتمدة على npm يجب أن تصبح قابلة للمعاينة دون خطوة يدوية.
   // npm install تزايدي: يعيد استخدام node_modules والحجم المخبأ في مساحة المشروع.
   const pkgPath = join(dir, "package.json");
+  const lockPath = ["package-lock.json", "npm-shrinkwrap.json"]
+    .map((name) => join(dir, name))
+    .find((path) => existsSync(path));
+  const installStampPath = join(dir, "node_modules", ".weaver-install-hash");
   const installLogs = [];
   if (existsSync(pkgPath)) {
-    const installed = await runCommand(id, "npm install --no-audit --no-fund", MAX_EXEC_MS);
-    if (installed.output)
-      installLogs.push(`[runtime] $ npm install --no-audit --no-fund\n${installed.output}`);
+    const dependencyHash = createHash("sha256")
+      .update(await readFile(pkgPath))
+      .update(lockPath ? await readFile(lockPath) : "")
+      .digest("hex");
+    const installedHash = await readFile(installStampPath, "utf-8").catch(() => "");
+    const needsInstall = installedHash !== dependencyHash;
+    const installed = needsInstall
+      ? await runCommand(
+          id,
+          lockPath ? "npm ci --no-audit --no-fund" : "npm install --no-audit --no-fund",
+          MAX_EXEC_MS,
+        )
+      : { ok: true, exitCode: 0, output: "[runtime] الاعتماديات محدثة — تم تخطي npm install." };
+    if (installed.output) installLogs.push(installed.output);
     if (!installed.ok) {
       const entry = {
         proc: { pid: 0, kill() {} },
@@ -236,6 +252,7 @@ async function startDev(projectId, overrideCommand) {
         logs: installLogs.slice(-120),
       };
     }
+    if (needsInstall) await writeFile(installStampPath, dependencyHash, "utf-8");
   }
 
   const port = await allocatePort();

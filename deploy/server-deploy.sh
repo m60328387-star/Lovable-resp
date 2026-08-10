@@ -25,6 +25,19 @@ fi
 
 read_env() { grep -m1 "^$1=" "$ENV_FILE" | cut -d= -f2- || true; }
 
+# Runtime أساسي للمعاينة والبناء. ولّد سراً فعلياً عند غيابه أو بقاء قيمة المثال.
+EXECUTOR_TOKEN_VALUE="$(read_env EXECUTOR_TOKEN)"
+if [ ${#EXECUTOR_TOKEN_VALUE} -lt 16 ] || [ "$EXECUTOR_TOKEN_VALUE" = "replace-with-executor-token-from-app" ]; then
+  GENERATED_EXECUTOR_TOKEN="$(openssl rand -hex 32)"
+  if grep -q '^EXECUTOR_TOKEN=' "$ENV_FILE"; then
+    sed -i "s/^EXECUTOR_TOKEN=.*/EXECUTOR_TOKEN=$GENERATED_EXECUTOR_TOKEN/" "$ENV_FILE"
+  else
+    printf '\nEXECUTOR_TOKEN=%s\n' "$GENERATED_EXECUTOR_TOKEN" >> "$ENV_FILE"
+  fi
+  chmod 600 "$ENV_FILE"
+  unset GENERATED_EXECUTOR_TOKEN
+fi
+
 REPO_URL="$(read_env GITHUB_REPO_URL)"
 TOKEN="$(read_env GITHUB_TOKEN)"
 REF="${1:-}"
@@ -151,7 +164,7 @@ for i in $(seq 1 40); do
 done
 echo "HEALTH: ${body:-<no response>}"
 
-# بيئة التنفيذ (حاوية runtime) — تحذير فقط، لا يُفشل النشر.
+# بيئة التنفيذ جزء أساسي من البناء والمعاينة؛ فشلها يفشل الإصدار بدل نشر نسخة ناقصة.
 rt=""
 for i in $(seq 1 20); do
   rt=$(docker compose exec -T runtime node -e "fetch('http://127.0.0.1:4100/health').then(r=>r.text()).then(t=>console.log(t)).catch(()=>process.exit(1))" 2>/dev/null || true)
@@ -159,6 +172,15 @@ for i in $(seq 1 20); do
   sleep 3
 done
 echo "RUNTIME: ${rt:-<not ready>}"
+
+case "${rt:-}" in
+  *'"ok":true'*) ;;
+  *)
+    echo "DEPLOY: FAIL (runtime unavailable)"
+    docker compose logs --tail=80 runtime 2>&1 | sed -E 's/(token|secret|password|key)=?[^ ]*/\1=[REDACTED]/Ig' || true
+    exit 1
+    ;;
+esac
 
 case "${body:-}" in
   *'"ok":true'*) echo "DEPLOY: PASS";;

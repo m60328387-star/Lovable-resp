@@ -81,7 +81,7 @@ export const runtimeDevStart = (projectId: string, command?: string) =>
     previewPath: string;
     ready: boolean;
     logs?: string[];
-  }>("/dev/start", { projectId, command }, 150_000);
+  }>("/dev/start", { projectId, command }, 360_000);
 
 export const runtimeDevStop = (projectId: string) =>
   call<{ ok: boolean; stopped: boolean }>("/dev/stop", { projectId }, 30_000);

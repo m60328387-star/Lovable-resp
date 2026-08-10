@@ -38,6 +38,8 @@ function summarizeToolOutput(output: unknown): unknown {
     "ok",
     "error",
     "status",
+    "runId",
+    "command",
     "exitCode",
     "score",
     "verdict",
