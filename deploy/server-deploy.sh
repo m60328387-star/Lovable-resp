@@ -85,7 +85,13 @@ echo "== تحديث الكود =="
 # موقع العميل بدلاً من Weaver حتى لو كانت src الجديدة صحيحة.
 SAVED_ENV="$(mktemp)"
 cp "$BACKUP/deploy/.env" "$SAVED_ENV"
-find "$ROOT" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+# احذف فقط عناصر الجذر الدخيلة التي لا وجود لها في نسخة Weaver الجديدة.
+# لا تحذف مجلد deploy الجاري تنفيذه، ثم انسخ النسخة الجديدة فوق الموجودة.
+for current in "$ROOT"/* "$ROOT"/.[!.]* "$ROOT"/..?*; do
+  [ -e "$current" ] || continue
+  name="$(basename "$current")"
+  [ -e "$TMP/src/$name" ] || rm -rf "$current"
+done
 cp -a "$TMP/src/." "$ROOT/"
 # لا نسمح للكود المسحوب بأن يمسح أسرار الخادم
 mkdir -p "$(dirname "$ENV_FILE")"
