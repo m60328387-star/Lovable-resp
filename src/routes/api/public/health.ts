@@ -8,7 +8,12 @@ import { getSql } from "@/lib/db";
 export const Route = createFileRoute("/api/public/health")({
   server: {
     handlers: {
-      GET: async () => {
+      GET: async ({ request }) => {
+        // التفاصيل التشغيلية (المتغيرات الناقصة، المزوّدون، القدرات) استطلاع مفيد
+        // لمهاجم — تُعرض فقط لحاملي توكن العامل؛ العامة يرون ok/db فقط.
+        const authz = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
+        const workerSecret = (process.env["WEAVER_WORKER_TOKEN"] ?? "").trim();
+        const detailed = Boolean(workerSecret) && authz === workerSecret;
         const required = [
           "DATABASE_URL",
           "SESSION_SECRET",
@@ -85,6 +90,10 @@ export const Route = createFileRoute("/api/public/health")({
             /* التنبيه لا يُفشل فحص الصحة */
           }
         }
+        if (!detailed) {
+          return Response.json({ ok, db, at: new Date().toISOString() }, { status: ok ? 200 : 503 });
+        }
+
         return Response.json(
           {
             ok,

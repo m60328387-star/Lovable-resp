@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 export const STORAGE_KEY = "weaver:openrouter-model";
-export const DEFAULT_MODEL = "anthropic/claude-sonnet-4.6";
+export const DEFAULT_MODEL = "deepseek/deepseek-chat-v3.1";
 
 export const MODEL_OPTIONS: { id: string; label: string; note: string }[] = [
   {
@@ -32,7 +32,7 @@ export const MODEL_OPTIONS: { id: string; label: string; note: string }[] = [
   {
     id: "anthropic/claude-sonnet-4.6",
     label: "Claude Sonnet 4.6 — الأذكى",
-    note: "أفضل جودة بناء وتفكير موسّع (افتراضي)",
+    note: "أعلى جودة لكنه الأغلى (اختياري)",
   },
   { id: "openai/gpt-5.1", label: "GPT-5.1", note: "استدلال قوي" },
   { id: "openai/gpt-5-mini", label: "GPT-5 mini", note: "سريع واقتصادي" },

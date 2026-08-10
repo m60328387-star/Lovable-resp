@@ -3,6 +3,7 @@ import { convertToModelMessages, generateText, stepCountIs, type UIMessage } fro
 import { getOpenRouterModelId } from "@/lib/openrouter.server";
 import { resolveBuildModel, noteOpenRouterUnavailable } from "@/lib/build-provider.server";
 import { getSql } from "@/lib/db";
+import { compactMessages } from "@/lib/context-compaction";
 import { makeLocalSupabase } from "@/lib/local-supabase";
 import { estimateCostUsd } from "@/lib/pricing";
 import { withTokenBudget } from "@/lib/token-budget.server";
@@ -129,7 +130,7 @@ export const Route = createFileRoute("/api/public/worker/tick")({
             generateText({
               model: routed.model,
               system: buildWeaverSystem(skills, job.mode) + statusPrompt(lifecycle, buildIntent),
-              messages: await convertToModelMessages((job.messages ?? []) as UIMessage[]),
+              messages: await convertToModelMessages(compactMessages((job.messages ?? []) as UIMessage[])),
               tools,
               stopWhen: [stepCountIs(MAX_STEPS), () => Date.now() - startedAt > TIME_BUDGET_MS * 3],
               maxOutputTokens,

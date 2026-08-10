@@ -134,7 +134,8 @@ export async function saveBuildState(
   await sql`
     UPDATE public.projects
     SET build_state = ${sql.json(merged as never)},
-        next_action = ${(nextAction ?? current.phase === "done") ? "done" : null},
+        status = ${merged.phase},
+        next_action = ${nextAction ?? (merged.phase === "done" ? "done" : null)},
         last_error = ${error ?? null},
         build_progress = ${progress},
         updated_at = now()

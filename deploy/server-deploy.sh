@@ -141,10 +141,11 @@ for f in $(ls db/init/*.sql 2>/dev/null | sort); do
   docker compose exec -T db psql -U weaver -d weaver < "$f" >/dev/null 2>&1 || echo "MIGRATION SKIPPED: $f"
 done
 
+WEAVER_WORKER_TOKEN="${WEAVER_WORKER_TOKEN:-$(grep -m1 "^WEAVER_WORKER_TOKEN=" .env 2>/dev/null | cut -d= -f2-)}"
 echo "== التحقق =="
 body=""
 for i in $(seq 1 40); do
-  body=$(curl -sf "http://127.0.0.1:$PORT/api/public/health" || true)
+  body=$(curl -sf -H "Authorization: Bearer ${WEAVER_WORKER_TOKEN:-}" "http://127.0.0.1:$PORT/api/public/health" || true)
   case "$body" in *'"ok":true'*) break;; esac
   sleep 5
 done

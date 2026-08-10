@@ -15,6 +15,7 @@ import type { UIMessage } from "ai";
 
 const KEEP_RECENT = 8;
 const MAX_MESSAGES = 60;
+const MAX_CONTEXT_TOKENS = 120_000;
 const MAX_TEXT_CHARS = 1200;
 const MAX_TOOL_CHARS = 700;
 
@@ -86,9 +87,13 @@ export function compactMessages(messages: UIMessage[], keepRecent = KEEP_RECENT)
   if (!Array.isArray(messages) || messages.length === 0) return messages;
 
   let working = messages;
-  if (working.length > MAX_MESSAGES) {
+  // الطيّ يعتمد على عدد الرسائل *و* على الحجم الفعلي: رسالة واحدة ضخمة
+  // (مخرجات read_file لملف كبير) قد تتجاوز عشرات الرسائل مجتمعة.
+  const tooLarge = estimateContextTokens(messages) > MAX_CONTEXT_TOKENS;
+  if (working.length > MAX_MESSAGES || (tooLarge && working.length > keepRecent + 3)) {
+    const limit = Math.min(MAX_MESSAGES, Math.max(keepRecent + 3, working.length));
     const head = working.slice(0, 2);
-    const tail = working.slice(-(MAX_MESSAGES - 3));
+    const tail = working.slice(-(limit - 3));
     const droppedCount = working.length - head.length - tail.length;
     const marker = {
       id: `compact-${droppedCount}`,

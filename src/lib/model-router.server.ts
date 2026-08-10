@@ -75,8 +75,8 @@ export function candidatesFor(kind: TaskKind, openRouterModel?: string): Candida
     case "coding":
     default:
       return [
-        orFallback("anthropic/claude-sonnet-4.6"),
         orFallback("deepseek/deepseek-chat-v3.1"),
+        orFallback("deepseek/deepseek-chat-v3.1:free"),
         { provider: "gemini", model: envModel("GEMINI_REASONING_MODEL", "gemini-pro-latest") },
 
         { provider: "gemini", model: envModel("GEMINI_FAST_MODEL", "gemini-flash-latest") },

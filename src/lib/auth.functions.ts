@@ -1,7 +1,14 @@
 import { createServerFn } from "@tanstack/react-start";
 import { useSession, updateSession, clearSession } from "@tanstack/react-start/server";
 import { z } from "zod";
-import { getOwnerId, getSessionConfig, passwordMatches } from "./auth.server";
+import {
+  getOwnerId,
+  getSessionConfig,
+  passwordMatches,
+  passcodeGateStatus,
+  notePasscodeFailure,
+  resetPasscodeGate,
+} from "./auth.server";
 
 export const checkSession = createServerFn({ method: "GET" }).handler(async () => {
   const session = await useSession<{
@@ -25,11 +32,18 @@ export const enterWithPasscode = createServerFn({ method: "POST" })
       throw new Error("Owner credentials are not configured.");
     }
 
-    if (!passwordMatches(data.passcode.trim(), expected.trim())) {
-      await new Promise((r) => setTimeout(r, 400));
-      return { ok: false as const };
+    const gate = passcodeGateStatus();
+    if (gate.locked) {
+      return { ok: false as const, lockedFor: gate.retryAfterSec };
     }
 
+    if (!passwordMatches(data.passcode.trim(), expected.trim())) {
+      notePasscodeFailure();
+      await new Promise((r) => setTimeout(r, 400));
+      return { ok: false as const, lockedFor: passcodeGateStatus().retryAfterSec };
+    }
+
+    resetPasscodeGate();
     const owner = { id: getOwnerId(ownerEmail), email: ownerEmail };
 
     await updateSession(getSessionConfig(), { owner });

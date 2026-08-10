@@ -89,9 +89,9 @@ export type PlatformSettings = {
 };
 
 export const DEFAULT_PLATFORM_SETTINGS: PlatformSettings = {
-  primaryModel: "anthropic/claude-sonnet-4.6",
+  primaryModel: "deepseek/deepseek-chat-v3.1",
   fastModel: "google/gemini-flash-latest",
-  reasoningModel: "anthropic/claude-sonnet-4.6",
+  reasoningModel: "deepseek/deepseek-chat-v3.1",
   visionModel: "google/gemini-pro-latest",
 
   maxSteps: 120,

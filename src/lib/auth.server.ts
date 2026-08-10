@@ -75,3 +75,38 @@ export function getSessionConfig() {
     },
   };
 }
+
+/**
+ * حماية من التخمين (brute force) على رمز الدخول الوحيد.
+ * المنصة أحادية المالك، لذا العدّاد عام: بعد MAX_FAILS محاولة فاشلة يُقفل
+ * الدخول لمدة تصاعدية حتى تنتهي النافذة.
+ */
+const MAX_FAILS = 6;
+const LOCK_MS = 5 * 60_000;
+const gate = { fails: 0, lockedUntil: 0 };
+
+export function passcodeGateStatus(): { locked: boolean; retryAfterSec: number } {
+  const now = Date.now();
+  if (gate.lockedUntil > now) {
+    return { locked: true, retryAfterSec: Math.ceil((gate.lockedUntil - now) / 1000) };
+  }
+  if (gate.lockedUntil && gate.lockedUntil <= now) {
+    gate.lockedUntil = 0;
+    gate.fails = 0;
+  }
+  return { locked: false, retryAfterSec: 0 };
+}
+
+export function notePasscodeFailure(): void {
+  gate.fails += 1;
+  if (gate.fails >= MAX_FAILS) {
+    // قفل تصاعدي: كل تجاوز إضافي يضاعف مدة القفل حتى ساعة كحد أقصى.
+    const factor = Math.min(2 ** (gate.fails - MAX_FAILS), 12);
+    gate.lockedUntil = Date.now() + LOCK_MS * factor;
+  }
+}
+
+export function resetPasscodeGate(): void {
+  gate.fails = 0;
+  gate.lockedUntil = 0;
+}
