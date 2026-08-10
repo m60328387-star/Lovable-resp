@@ -8,8 +8,10 @@ import {
   Code2,
   FileCode,
   GitBranch,
+  Eye,
   Loader2,
   MessageSquarePlus,
+  PlayCircle,
   RefreshCw,
   Rocket,
   Save,
@@ -26,6 +28,8 @@ import {
   approvePlatformChange,
   exportBackup,
   getDeployStatus,
+  getStagePreview,
+  stagePlatform,
   listPlatformErrors,
   restoreBackup,
   deployPlatform,
@@ -386,6 +390,157 @@ function ChangesTab() {
   );
 }
 
+function StagePreviewCard() {
+  const queryClient = useQueryClient();
+  const preview = useQuery({
+    queryKey: ["stage-preview"],
+    queryFn: () => getStagePreview(),
+    refetchInterval: (query) => (query.state.data?.stage.status === "running" ? 5_000 : 20_000),
+  });
+  const stage = preview.data?.stage;
+  const head = preview.data?.head;
+
+  const act = useMutation({
+    mutationFn: (action: "up" | "down") => stagePlatform({ data: { action } }),
+    onSuccess: (result) => {
+      if (result.ok) toast.info(result.log);
+      else toast.error(result.log);
+      void queryClient.invalidateQueries({ queryKey: ["stage-preview"] });
+      void queryClient.invalidateQueries({ queryKey: ["platform-deploys"] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "تعذّرت المعاينة"),
+  });
+
+  const running = stage?.status === "running";
+  const label =
+    stage?.status === "success"
+      ? stage.matchesHead
+        ? "جاهزة ومطابقة لآخر إصدار"
+        : "جاهزة لكن لإصدار أقدم"
+      : stage?.status === "running"
+        ? "قيد البناء…"
+        : stage?.status === "failed"
+          ? "فشل البناء"
+          : "لم تُبنَ بعد";
+
+  return (
+    <div className="rounded-2xl border bg-card p-4 shadow-soft">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="flex items-center gap-2 text-[15px] font-bold">
+          <Eye className="size-4" /> معاينة قبل النشر
+        </h2>
+        <span
+          className={cn(
+            "rounded-full px-2.5 py-1 text-[11.5px] font-semibold",
+            stage?.status === "success" && stage.matchesHead
+              ? "bg-emerald-500/15 text-emerald-700"
+              : stage?.status === "failed"
+                ? "bg-rose-500/15 text-rose-700"
+                : running
+                  ? "bg-sky-500/15 text-sky-700"
+                  : "bg-muted text-muted-foreground",
+          )}
+        >
+          {label}
+        </span>
+      </div>
+      <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
+        تُبنى نسخة كاملة من الإصدار المرشّح على الخادم بمنفذ مستقل، تشترك مع الإنتاج في قاعدة
+        البيانات وبيئة التنفيذ فقط. افحصها بنفسك، وعندها فقط يُسمح بتبديل الإنتاج.
+      </p>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div className="rounded-xl border bg-muted/40 p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            إصدار المعاينة
+          </p>
+          <p className="mt-1 font-mono text-[12px]" dir="ltr">
+            {stage?.ref ? stage.ref.slice(0, 12) : "—"}
+          </p>
+          <p className="mt-1 text-[11px] text-muted-foreground" dir="ltr">
+            HEAD: {head?.sha ?? "—"}
+          </p>
+        </div>
+        <div className="rounded-xl border bg-muted/40 p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            رابط المعاينة
+          </p>
+          {stage?.url ? (
+            <a
+              href={stage.url}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1 block truncate text-[12px] text-primary hover:underline"
+              dir="ltr"
+            >
+              {stage.url}
+            </a>
+          ) : (
+            <p className="mt-1 text-[12px] text-muted-foreground">
+              اضبط PLATFORM_STAGE_URL أو WEAVER_SERVER_IP لعرض الرابط.
+            </p>
+          )}
+          {stage?.finishedAt ? (
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              {new Date(stage.finishedAt).toLocaleString("ar")}
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={act.isPending || running}
+          onClick={() => act.mutate("up")}
+          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-[13px] font-semibold text-primary-foreground disabled:opacity-50"
+        >
+          {act.isPending || running ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <PlayCircle className="size-4" />
+          )}
+          بناء المعاينة
+        </button>
+        {stage?.url && stage.status === "success" ? (
+          <a
+            href={stage.url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-[13px] font-semibold hover:bg-accent"
+          >
+            <Eye className="size-4" /> فتح المعاينة
+          </a>
+        ) : null}
+        <button
+          type="button"
+          disabled={act.isPending}
+          onClick={() => act.mutate("down")}
+          className="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-[13px] font-semibold hover:bg-accent disabled:opacity-50"
+        >
+          <X className="size-4" /> إيقاف المعاينة
+        </button>
+        <button
+          type="button"
+          onClick={() => void queryClient.invalidateQueries({ queryKey: ["stage-preview"] })}
+          className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-[13px] font-semibold hover:bg-accent"
+        >
+          <RefreshCw className="size-4" /> تحديث
+        </button>
+      </div>
+
+      {stage?.log ? (
+        <pre
+          className="mt-3 max-h-56 overflow-auto rounded-lg bg-muted/50 p-2 font-mono text-[11px]"
+          dir="ltr"
+        >
+          {stage.log}
+        </pre>
+      ) : null}
+    </div>
+  );
+}
+
 function DeployTab() {
   const queryClient = useQueryClient();
   const status = useQuery({
@@ -399,10 +554,14 @@ function DeployTab() {
     refetchInterval: (query) =>
       query.state.data?.some((item) => item.status === "running") ? 5_000 : false,
   });
+  const [skipStage, setSkipStage] = useState(false);
   const run = useMutation({
-    mutationFn: (action: "deploy" | "rollback") => deployPlatform({ data: { action } }),
+    mutationFn: (action: "deploy" | "rollback") =>
+      deployPlatform({ data: { action, force: action === "deploy" ? skipStage : true } }),
     onSuccess: (result) => {
-      if (result.pending) toast.info("بدأ الدفع إلى كونتابو — ستظهر النتيجة النهائية تلقائياً");
+      if ((result as { blockedByStage?: boolean }).blockedByStage) toast.error(result.log);
+      else if (result.pending)
+        toast.info("بدأ الدفع إلى كونتابو — ستظهر النتيجة النهائية تلقائياً");
       else if (result.ok) toast.success("تم الاتصال بالخادم");
       else toast.error("فشل الاتصال بكونتابو — راجع السجل");
       void queryClient.invalidateQueries({ queryKey: ["platform-deploys"] });
@@ -549,11 +708,20 @@ function DeployTab() {
               void queryClient.invalidateQueries({ queryKey: ["deploy-status"] });
             }}
             className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-[13px] font-semibold hover:bg-accent"
-          >
-            <RefreshCw className="size-4" /> تحديث
-          </button>
+          ></button>
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-[12px] font-semibold text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={skipStage}
+              onChange={(event) => setSkipStage(event.target.checked)}
+              className="size-3.5 accent-current"
+            />
+            تخطّي المعاينة (غير موصى به)
+          </label>
         </div>
       </div>
+
+      <StagePreviewCard />
 
       <div className="space-y-2">
         {(deploys.data ?? []).map((d) => (

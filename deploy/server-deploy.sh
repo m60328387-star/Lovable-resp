@@ -38,6 +38,29 @@ if [ ${#EXECUTOR_TOKEN_VALUE} -lt 16 ] || [ "$EXECUTOR_TOKEN_VALUE" = "replace-w
   unset GENERATED_EXECUTOR_TOKEN
 fi
 
+# ====== إعدادات المعاينة قبل النشر (staging) ======
+# تُضاف مرة واحدة فقط، ولا تُلمس إن كانت موجودة (المستخدم قد يخصّصها).
+ensure_env_default() {
+  if ! grep -q "^$1=" "$ENV_FILE"; then
+    printf '\n%s=%s\n' "$1" "$2" >> "$ENV_FILE"
+    chmod 600 "$ENV_FILE"
+  fi
+}
+STAGE_PORT_VALUE="$(read_env WEAVER_STAGE_PORT)"
+STAGE_PORT_VALUE="${STAGE_PORT_VALUE:-8090}"
+SERVER_IP_VALUE="$(read_env WEAVER_SERVER_IP)"
+if [ -z "$SERVER_IP_VALUE" ]; then
+  SERVER_IP_VALUE="$(curl -sf --max-time 5 https://api.ipify.org || hostname -I | awk '{print $1}')"
+fi
+ensure_env_default WEAVER_STAGE_PORT "$STAGE_PORT_VALUE"
+ensure_env_default WEAVER_SERVER_IP "$SERVER_IP_VALUE"
+ensure_env_default PLATFORM_STAGE_URL "http://$SERVER_IP_VALUE:$STAGE_PORT_VALUE"
+if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
+  ufw allow "$STAGE_PORT_VALUE"/tcp >/dev/null 2>&1 || true
+fi
+
+
+
 # ====== شبكة أمان الذاكرة: ملف swap دائم ======
 # خادم واحد يحمل المنصة والبناء معاً، وذروة npm/vite قد تستهلك الرام كاملة.
 # ننشئ swap مرة واحدة (idempotent) ونثبّته في fstab ليبقى بعد إعادة التشغيل.
@@ -234,6 +257,13 @@ case "${body:-}" in
   *'"ok":true'*) echo "DEPLOY: PASS";;
   *) echo "DEPLOY: FAIL"; exit 1;;
 esac
+
+# بعد نجاح النشر لم تعد نسخة المعاينة لازمة — نوقفها لتحرير الذاكرة على الخادم الواحد.
+if docker ps --format '{{.Names}}' | grep -q '^weaver-stage$'; then
+  echo "== إيقاف نسخة المعاينة بعد النشر =="
+  docker rm -f weaver-stage >/dev/null 2>&1 || true
+fi
+
 
 # خطّاف النشر يعمل كخدمة systemd على المضيف، وتحديثه لا يسري إلا بإعادة تشغيله.
 # نؤجّل إعادة التشغيل قليلاً حتى تنتهي هذه المهمة وتُسلَّم نتيجتها للمنصة.

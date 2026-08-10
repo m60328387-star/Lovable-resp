@@ -216,18 +216,70 @@ export const revertPlatformChange = createServerFn({ method: "POST" })
 /** ينشر آخر إصدار من المنصة على الخادم. */
 export const deployPlatform = createServerFn({ method: "POST" })
   .middleware([requireWeaverAuth])
-  .inputValidator((input: { action?: "deploy" | "rollback"; ref?: string }) =>
+  .inputValidator((input: { action?: "deploy" | "rollback"; ref?: string; force?: boolean }) =>
     z
-      .object({ action: z.enum(["deploy", "rollback"]).optional(), ref: z.string().optional() })
+      .object({
+        action: z.enum(["deploy", "rollback"]).optional(),
+        ref: z.string().optional(),
+        force: z.boolean().optional(),
+      })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    const { deployWithGuard, runDeployHook, recordDeploy } = await import("@/lib/platform.server");
+    const { deployWithGuard, runDeployHook, recordDeploy, stageGateBlock } =
+      await import("@/lib/platform.server");
+    type DeployResult = Awaited<ReturnType<typeof runDeployHook>>;
     const action = data.action ?? "deploy";
+    // بوابة المعاينة: لا يُبدَّل الإنتاج قبل معاينة ناجحة لنفس الإصدار (إلا بتخطٍّ صريح).
+    if (action === "deploy" && !data.force) {
+      const blocked = await stageGateBlock();
+      if (blocked) {
+        const gated: DeployResult & { blockedByStage: true } = {
+          ok: false,
+          status: 412,
+          log: blocked,
+          blockedByStage: true,
+        };
+        return gated;
+      }
+    }
     // النشر يمرّ عبر الحارس: فحص صحي بعد النشر وتراجع تلقائي عند الفشل.
     const result = data.ref ? await runDeployHook(action, data.ref) : await deployWithGuard(action);
     await recordDeploy(context.userId, action, result);
     return result;
+  });
+
+/** يبني نسخة معاينة على الخادم من آخر إصدار (أو إصدار محدّد) دون لمس الإنتاج. */
+export const stagePlatform = createServerFn({ method: "POST" })
+  .middleware([requireWeaverAuth])
+  .inputValidator((input: { action?: "up" | "down"; ref?: string }) =>
+    z
+      .object({ action: z.enum(["up", "down"]).optional(), ref: z.string().optional() })
+      .parse(input ?? {}),
+  )
+  .handler(async ({ data, context }) => {
+    const { runStageHook, recordDeploy, getGithubHead } = await import("@/lib/platform.server");
+    const action = data.action ?? "up";
+    let ref = data.ref ?? null;
+    if (action === "up" && !ref) {
+      const head = await getGithubHead();
+      ref = head.sha ?? null;
+    }
+    const result = await runStageHook(action, ref);
+    await recordDeploy(context.userId, action === "up" ? "stage" : "stage-stop", result, null, ref);
+    return result;
+  });
+
+/** حالة نسخة المعاينة الحالية ومطابقتها لآخر إصدار. */
+export const getStagePreview = createServerFn({ method: "POST" })
+  .middleware([requireWeaverAuth])
+  .handler(async () => {
+    const { getStageState, getGithubHead, syncPendingDeploys } =
+      await import("@/lib/platform.server");
+    await syncPendingDeploys();
+    const head = await getGithubHead();
+    const stage = await getStageState(head.sha ?? null);
+    return { stage, head };
   });
 
 /** حالة النشر الحالية: خطّاف كونتابو، GitHub، والإصدار الأخير. */

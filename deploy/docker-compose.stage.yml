@@ -1,0 +1,43 @@
+# نسخة معاينة (staging) من المنصة: حاوية واحدة تعمل بجوار الإنتاج على منفذ مستقل.
+# تُبنى من نفس الكود المرشّح للنشر وتنضم لشبكة الإنتاج للوصول إلى قاعدة البيانات وبيئة التنفيذ،
+# لكنها لا تشغّل عاملاً خلفياً ولا nginx ولا نسخاً احتياطياً — معاينة فقط قبل تبديل الإنتاج.
+services:
+  app-stage:
+    build:
+      context: ../
+      dockerfile: deploy/Dockerfile
+      args:
+        VITE_SUPABASE_URL: ${SUPABASE_URL}
+        VITE_SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY}
+    container_name: weaver-stage
+    restart: "no"
+    env_file: .env
+    environment:
+      - NODE_ENV=production
+      - HOST=0.0.0.0
+      - PORT=3000
+      - WEAVER_BUILD_TARGET=node
+      - WEAVER_STAGE=1
+      - RUNTIME_URL=http://runtime:4100
+    cpus: ${STAGE_CPUS:-2}
+    mem_limit: ${STAGE_MEMORY:-1500m}
+    ports:
+      - "0.0.0.0:${WEAVER_STAGE_PORT:-8090}:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - weaver
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "fetch('http://127.0.0.1:3000/api/public/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 40s
+
+networks:
+  weaver:
+    external: true
+    name: ${WEAVER_NETWORK:-deploy_weaver}

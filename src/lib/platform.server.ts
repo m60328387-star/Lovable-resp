@@ -54,7 +54,10 @@ export async function ensurePlatformTables(): Promise<void> {
     );
     ALTER TABLE public.platform_deploys
       ADD COLUMN IF NOT EXISTS external_job_id TEXT;
+    ALTER TABLE public.platform_deploys
+      ADD COLUMN IF NOT EXISTS ref TEXT;
   `);
+
   ensured = true;
 }
 
@@ -247,9 +250,10 @@ export async function runDeployHook(
 
 export async function recordDeploy(
   userId: string,
-  kind: "deploy" | "rollback",
+  kind: "deploy" | "rollback" | "stage" | "stage-stop",
   result: DeployResult,
   changeId?: string | null,
+  ref?: string | null,
 ): Promise<void> {
   await ensurePlatformTables();
   const sql = getSql();
@@ -257,10 +261,16 @@ export async function recordDeploy(
   const finishedAt = result.pending ? null : new Date();
   await sql`
     INSERT INTO public.platform_deploys
-      (user_id, status, kind, log, change_id, finished_at, external_job_id)
+      (user_id, status, kind, log, change_id, finished_at, external_job_id, ref)
     VALUES
-      (${userId}, ${status}, ${kind}, ${result.log}, ${changeId ?? null}, ${finishedAt}, ${result.jobId ?? null})
+      (${userId}, ${status}, ${kind}, ${result.log}, ${changeId ?? null}, ${finishedAt}, ${result.jobId ?? null}, ${ref ?? null})
   `;
+}
+
+/** يستخرج الإصدار الذي بُنيت منه المعاينة فعلياً من سجل المهمة. */
+function parseStageCommit(log: string): string | null {
+  const match = /STAGE_COMMIT:\s*([0-9a-f]{7,40})/i.exec(log);
+  return match?.[1] ? match[1].slice(0, 40) : null;
 }
 
 /** يطابق المهام المقبولة مع نتيجتها الحقيقية بعد عودة التطبيق من إعادة التشغيل. */
@@ -272,7 +282,7 @@ export async function syncPendingDeploys(): Promise<void> {
 
   const sql = getSql();
   const pending = await sql`
-    SELECT id, external_job_id
+    SELECT id, external_job_id, kind
     FROM public.platform_deploys
     WHERE status = 'running' AND external_job_id IS NOT NULL
     ORDER BY created_at ASC
@@ -302,9 +312,12 @@ export async function syncPendingDeploys(): Promise<void> {
           await sql`UPDATE public.platform_deploys SET log = ${log || "النشر قيد التنفيذ…"} WHERE id = ${row["id"]}`;
           return;
         }
+        // معاينة: نثبّت الإصدار الفعلي المبني حتى تعرف بوابة النشر ما الذي عُوين.
+        const stageCommit = String(row["kind"] ?? "") === "stage" ? parseStageCommit(log) : null;
         await sql`
         UPDATE public.platform_deploys
-        SET status = ${status}, log = ${log}, finished_at = now()
+        SET status = ${status}, log = ${log}, finished_at = now(),
+            ref = COALESCE(${stageCommit}, ref)
         WHERE id = ${row["id"]}
       `;
       } catch {
@@ -423,4 +436,146 @@ export async function deployWithGuard(
     rolledBack: rollback.ok,
     log: `${result.log}\n\nفشل الفحص الصحي بعد النشر (${health.status}): ${health.detail}\nتم التراجع تلقائياً: ${rollback.ok ? "نجح" : "فشل"}\n${rollback.log}`,
   };
+}
+
+// ============ معاينة قبل النشر (staging) ============
+
+/** رابط نسخة المعاينة على الخادم كما يراه المتصفح. */
+export function stagePublicUrl(): string | null {
+  const explicit = process.env["PLATFORM_STAGE_URL"];
+  if (explicit && explicit.trim()) return explicit.trim().replace(/\/+$/, "");
+  const port = process.env["WEAVER_STAGE_PORT"] ?? "8090";
+  const base = process.env["PLATFORM_PUBLIC_URL"];
+  if (base) {
+    try {
+      const url = new URL(base);
+      return `${url.protocol}//${url.hostname}:${port}`;
+    } catch {
+      /* رابط غير صالح — نعود للـIP أدناه */
+    }
+  }
+  const ip = process.env["WEAVER_SERVER_IP"];
+  return ip ? `http://${ip}:${port}` : null;
+}
+
+/** يشغّل مهمة بناء/إيقاف نسخة المعاينة على الخادم. */
+export async function runStageHook(
+  action: "up" | "down",
+  ref?: string | null,
+): Promise<DeployResult> {
+  const token = process.env["EXECUTOR_TOKEN"];
+  if (!token) {
+    return { ok: false, status: 0, log: "EXECUTOR_TOKEN غير مضبوط — لا يمكن تشغيل المعاينة." };
+  }
+  try {
+    const res = await fetch(deployHookEndpoint("/stage"), {
+      method: "POST",
+      signal: AbortSignal.timeout(15_000),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action, ref: ref ?? null }),
+    });
+    const text = await res.text();
+    if (res.status === 202) {
+      let jobId = "";
+      try {
+        jobId = String((JSON.parse(text) as { jobId?: unknown }).jobId ?? "");
+      } catch {
+        /* خطّاف قديم قد يعيد نصاً */
+      }
+      return {
+        ok: true,
+        status: 202,
+        pending: true,
+        jobId,
+        log:
+          action === "up"
+            ? "بدأ بناء نسخة المعاينة على الخادم — لن يتأثر الإنتاج. سيظهر رابط المعاينة عند الاكتمال."
+            : "بدأ إيقاف نسخة المعاينة.",
+      };
+    }
+    if (res.status === 409) {
+      return {
+        ok: false,
+        status: 409,
+        log: "هناك مهمة أخرى قيد التنفيذ على الخادم — انتظر انتهاءها.",
+      };
+    }
+    if (res.status === 404 || res.status === 405) {
+      return {
+        ok: false,
+        status: res.status,
+        log: "خطّاف النشر على الخادم لا يدعم المعاينة بعد. انشر تحديث المنصة مرة واحدة (أو أعد تشغيل weaver-deploy-hook) ثم أعد المحاولة.",
+      };
+    }
+    return { ok: res.ok, status: res.status, log: describeHookResponse(res.status, text) };
+  } catch (error) {
+    return { ok: false, status: 0, log: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export type StageState = {
+  url: string | null;
+  status: "none" | "running" | "success" | "failed";
+  ref: string | null;
+  createdAt: string | null;
+  finishedAt: string | null;
+  log: string;
+  matchesHead: boolean;
+};
+
+/** آخر حالة معاينة مسجّلة، ومطابقتها لآخر إصدار على GitHub. */
+export async function getStageState(headSha?: string | null): Promise<StageState> {
+  await ensurePlatformTables();
+  const sql = getSql();
+  const rows = await sql`
+    SELECT status, ref, log, created_at, finished_at
+    FROM public.platform_deploys
+    WHERE kind = 'stage'
+    ORDER BY created_at DESC LIMIT 1
+  `;
+  const row = rows[0];
+  const url = stagePublicUrl();
+  if (!row) {
+    return {
+      url,
+      status: "none",
+      ref: null,
+      createdAt: null,
+      finishedAt: null,
+      log: "",
+      matchesHead: false,
+    };
+  }
+  const status = String(row["status"] ?? "");
+  const ref = row["ref"] ? String(row["ref"]) : null;
+  return {
+    url,
+    status: status === "success" ? "success" : status === "running" ? "running" : "failed",
+    ref,
+    createdAt: row["created_at"] ? String(row["created_at"]) : null,
+    finishedAt: row["finished_at"] ? String(row["finished_at"]) : null,
+    log: String(row["log"] ?? "").slice(-8000),
+    matchesHead: Boolean(
+      status === "success" && ref && headSha && ref.startsWith(headSha.slice(0, 7)),
+    ),
+  };
+}
+
+/**
+ * بوابة النشر: لا يُسمح بتبديل الإنتاج إلا بعد معاينة ناجحة لنفس الإصدار الموجود على GitHub.
+ * تُعيد رسالة خطأ عند المنع، أو null عند السماح.
+ */
+export async function stageGateBlock(): Promise<string | null> {
+  const head = await getGithubHead();
+  if (!head.configured || head.error || !head.sha) {
+    return null; // بلا GitHub لا يمكن التحقق — لا نمنع النشر اليدوي.
+  }
+  const stage = await getStageState(head.sha);
+  if (stage.status === "running") {
+    return "نسخة المعاينة قيد البناء الآن — انتظر انتهاءها ثم افحصها قبل النشر.";
+  }
+  if (!stage.matchesHead) {
+    return `لا توجد معاينة ناجحة للإصدار الحالي (${head.sha}). ابنِ المعاينة وافحصها أولاً، أو فعّل «تخطّي المعاينة» إن كنت متأكداً.`;
+  }
+  return null;
 }

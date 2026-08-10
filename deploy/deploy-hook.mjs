@@ -12,7 +12,14 @@ import { timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { createWriteStream, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
+import {
+  createWriteStream,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  readdirSync,
+  statSync,
+} from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -243,10 +250,17 @@ const server = createServer(async (req, res) => {
       input = {};
     }
     const service = String(input.service || "");
-    const allowed = { nginx: "weaver-nginx", runtime: "weaver-runtime", app: "weaver-app", worker: "weaver-worker" };
+    const allowed = {
+      nginx: "weaver-nginx",
+      runtime: "weaver-runtime",
+      app: "weaver-app",
+      worker: "weaver-worker",
+    };
     if (service === "deploy-hook") {
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-      res.end(JSON.stringify({ ok: true, service, detail: "سيُعاد تشغيل خطّاف النشر خلال ثانية." }));
+      res.end(
+        JSON.stringify({ ok: true, service, detail: "سيُعاد تشغيل خطّاف النشر خلال ثانية." }),
+      );
       setTimeout(() => {
         void sh("systemctl", ["restart", "weaver-deploy-hook"], 15000).then(() => process.exit(0));
       }, 800);
@@ -263,6 +277,50 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  // معاينة قبل النشر: يبني نسخة staging على منفذ مستقل بلا أي مساس بالإنتاج.
+  if (req.method === "POST" && req.url === "/stage") {
+    let raw = "";
+    for await (const chunk of req) raw += chunk;
+    let input = {};
+    try {
+      input = raw ? JSON.parse(raw) : {};
+    } catch {
+      input = {};
+    }
+    const stageAction = input.action === "down" ? "down" : "up";
+    const ref = typeof input.ref === "string" && /^[\w./-]{1,80}$/.test(input.ref) ? input.ref : "";
+
+    if (activeJob && Date.now() - activeSince > STALE_MS) {
+      activeJob = null;
+      activeSince = 0;
+    }
+    if (activeJob) {
+      res.writeHead(409, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ ok: false, error: "job already running", jobId: activeJob }));
+      return;
+    }
+
+    const stageJob = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    activeJob = stageJob;
+    activeSince = Date.now();
+    res.writeHead(202, { "Content-Type": "application/json; charset=utf-8" });
+    res.end(
+      JSON.stringify({ ok: true, accepted: true, jobId: stageJob, action: `stage:${stageAction}` }),
+    );
+    setImmediate(() =>
+      startJob(
+        stageJob,
+        `stage:${stageAction}`,
+        "deploy/server-stage.sh",
+        ["deploy/server-stage.sh"],
+        {
+          STAGE_ACTION: stageAction,
+          STAGE_REF: ref,
+        },
+      ),
+    );
+    return;
+  }
 
   // ربط دومين مخصّص بموقع منشور: يشغّل deploy/add-domain.sh (nginx + certbot).
   if (req.method === "POST" && req.url === "/domain") {
