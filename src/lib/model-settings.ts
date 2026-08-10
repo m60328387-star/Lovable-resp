@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 export const STORAGE_KEY = "weaver:openrouter-model";
-export const DEFAULT_MODEL = "deepseek/deepseek-chat-v3.1";
+export const DEFAULT_MODEL = "anthropic/claude-sonnet-4.6";
 
 export const MODEL_OPTIONS: { id: string; label: string; note: string }[] = [
   {
@@ -29,6 +29,11 @@ export const MODEL_OPTIONS: { id: string; label: string; note: string }[] = [
     label: "Llama 3.3 70B — مجاني",
     note: "مجاني، مناسب للمحادثة والتلخيص",
   },
+  {
+    id: "anthropic/claude-sonnet-4.6",
+    label: "Claude Sonnet 4.6 — الأذكى",
+    note: "أفضل جودة بناء وتفكير موسّع (افتراضي)",
+  },
   { id: "openai/gpt-5.1", label: "GPT-5.1", note: "استدلال قوي" },
   { id: "openai/gpt-5-mini", label: "GPT-5 mini", note: "سريع واقتصادي" },
   { id: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro", note: "سياق كبير" },
@@ -41,12 +46,7 @@ export function useModelSetting() {
 
   useEffect(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY);
-    if (saved?.startsWith("anthropic/claude")) {
-      window.localStorage.setItem(STORAGE_KEY, DEFAULT_MODEL);
-      setModelState(DEFAULT_MODEL);
-    } else if (saved) {
-      setModelState(saved);
-    }
+    if (saved) setModelState(saved);
   }, []);
 
   const setModel = useCallback((next: string) => {

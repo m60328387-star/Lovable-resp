@@ -46,6 +46,10 @@ import { skillPrompt } from "@/lib/skills";
 import { modePrompt } from "@/lib/modes";
 import { webSearch, webFetch } from "@/lib/web.server";
 import {
+  browserAct,
+  browserClose,
+  browserOpen,
+  browserRead,
   runtimeBrowserCheck,
   runtimeConfigured,
   runtimeDevLogs,
@@ -182,6 +186,15 @@ const SYSTEM_PROMPT = `أنت "Weaver" — وكيل هندسي (Engineering Agen
    publish_site يشغّل اختبار متصفح تلقائياً ويتحقق من وجود مراجعة بصرية ناجحة أحدث من آخر تعديل، ويرفض النشر إن لم تتوفر.
    إن حدّد المستخدم موقعاً مرجعياً فنفّذ capture_reference أولاً ليقارن design_review بالمرجع.
 
+8د. استعمال الحاسوب (Computer Use) — لأي مهمة على موقع خارجي (Google Ads، Search Console، لوحة مضيف، تسجيل نطاق، إدخال بيانات):
+   (أ) browser_open مع allowlist ضيّقة للنطاقات المطلوبة فقط. الجلسة دائمة لكل مشروع: تسجيل الدخول يبقى محفوظاً بين الجولات.
+   (ب) قبل كل إجراء نفّذ browser_read، وبعده اقرأ النتيجة المعادة. ممنوع النقر بلا قراءة الصفحة.
+   (ج) ممنوع منعاً باتاً طلب كلمة سر أو رمز تحقّق أو كتابتها. عند صفحة دخول/2FA/CAPTCHA (needsHuman=true) توقّف فوراً ونفّذ ask_user يطلب من المستخدم إتمام الدخول في تبويب «المتصفح الحيّ» ثم الرد بـ «تم».
+   (د) الخطوات التي لا رجعة فيها (دفع، شراء، إطلاق حملة، حذف، نشر إعلان) محجوبة آلياً: اعرض على المستخدم ملخّصاً دقيقاً بما ستفعله عبر ask_user، ولا تعد الإجراء بـ approved=true إلا بعد موافقته الصريحة.
+   (هـ) عند الانتهاء لخّص كل خطوة نفّذتها ورابط النتيجة، ثم browser_close.
+   (و) الطريقة الصحيحة دائماً: المستخدم يسجّل دخوله بنفسه والوكيل يكمل التعبئة أمامه — لا تحتفظ ببيانات اعتماده ولا ترسلها في أي أداة.
+
+
 8ج. المشاريع الكبيرة (تطبيقات حقيقية) — إن كان المطلوب تطبيقاً وليس صفحات ثابتة:
    استخدم run_command لبناء مشروع حقيقي (Vite + TypeScript، أو أي إطار مناسب)، ثبّت الحزم، شغّل npm run build،
    ثم نفّذ promote_build لنقل ناتج dist إلى جذر مساحة العمل، ثم أكمل بوابة الجودة البصرية والنشر.
@@ -257,7 +270,9 @@ const SYSTEM_PROMPT = `أنت "Weaver" — وكيل هندسي (Engineering Agen
 - المواقع متعددة الصفحات مسموحة ومطلوبة: index.html + about.html + services.html + contact.html… مع هيدر وفوتر متطابقين وروابط نسبية تعمل.
 - افصل الأنماط: styles.css أساسي + ملفات مثل components.css وpages.css عند الكِبَر، واربطها كلها في <head>.
 - اكتب كل ملفات الدفعة الواحدة (index.html + styles.css + script.js ...) في نداء write_files واحد بدل تكرار write_file — هذا يقلّص زمن البناء إلى النصف.
-- الملفات الكبيرة: اكتب الملف كاملاً بـ write_file في نداء واحد ما دام تحت 400000 حرف؛ استخدم append_file فقط لما يتجاوز ذلك. ممنوع تسليم ملف مبتور.
+- اقتصاد الكتابة (إلزامي): اكتب الحد الأدنى اللازم فقط. الملف الجديد أو الصغير يُكتب كاملاً بـ write_file؛ أما أي ملف قائم يتجاوز ~6000 حرف فيُعدَّل حصراً بـ edit_file باستبدالات دقيقة — write_file سيرفض إعادة كتابته إلا بـ force=true عند ضرورة حقيقية.
+- حدّ الحجم: استهدف أقل من 800 سطر (~60000 حرف) لكل ملف. إن ظهر تحذير حجم في نتيجة الكتابة، قسّم الملف فوراً إلى وحدات (صفحات مستقلة، components.css، modules JS) بدل الاستمرار في تضخيمه.
+- ممنوع نسخ محتوى ملف كامل داخل الدردشة أو تكرار كتلة موجودة أصلاً؛ اقرأ بـ read_slice وعدّل بـ edit_file. ممنوع تسليم ملف مبتور.
 - استخدم delete_file لإزالة أي ملف زائد أو خاطئ بدل تركه.
 - ابنِ على مراحل: هيكل الصفحات أولاً، ثم الأنماط، ثم التفاعل، ثم المحتوى الحقيقي، مع update_task بعد كل مرحلة و run_checks قبل النشر.
 
@@ -476,6 +491,15 @@ function extractCode(text: string) {
   return match ? match[1] : text;
 }
 
+/** تنبيه حجم: يدفع الوكيل لتقسيم الملفات الضخمة بدل تضخيمها. */
+function sizeHint(path: string, content: string) {
+  const lines = content.split("\n").length;
+  if (lines <= 800 && content.length <= 60_000) return {};
+  return {
+    warning: `الملف ${path} أصبح ${lines} سطراً (${content.length} حرف). قسّمه إلى وحدات أصغر (صفحات/ملفات CSS أو JS منفصلة) في الخطوة التالية.`,
+  };
+}
+
 function workspaceTools(auth: AuthedContext | null, projectId: string | null, origin: string) {
   const guard = () => {
     if (!auth || !projectId) throw new Error("مساحة العمل غير متاحة لهذه الجلسة");
@@ -483,7 +507,7 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
   };
 
   /** الكتابة الفعلية لملف واحد — يشاركها write_file و write_files. */
-  async function writeOne(path: string, content: string, summary: string) {
+  async function writeOne(path: string, content: string, summary: string, force = false) {
     // لا نرفض الملفات الكبيرة: الرفض كان يضيّع محتوى كتبه النموذج فعلاً (يظهر في الدردشة ولا يُحفظ).
     if (content.length > 400_000) {
       return {
@@ -501,6 +525,16 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
       .maybeSingle();
 
     if (existing) {
+      // اكتب فقط ما يلزم: إعادة كتابة ملف قائم كبير كاملاً تهدر التوكينز وتخاطر بالبتر
+      const previous = existing.content ?? "";
+      if (!force && previous.length > 6000 && content.length > 6000) {
+        return {
+          ok: false,
+          path,
+          error: `الملف ${path} موجود مسبقاً بحجم ${previous.length} حرف. لا تُعِد كتابته كاملاً — استخدم edit_file باستبدالات دقيقة للمقاطع المتغيّرة فقط. إن كانت إعادة البناء الكاملة ضرورية فعلاً مرّر force=true.`,
+        };
+      }
+
       // نسخة الإصدار السابق تُحفظ في الخلفية حتى لا تضيف زمناً لكل كتابة
       void supabase
         .from("file_versions")
@@ -532,25 +566,43 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
             "تم تعديل الملف من نداء آخر أثناء الكتابة. اقرأه من جديد بـ read_file ثم أعد التعديل.",
         };
       }
-      return { ok: true, path, version: updated.version, bytes: content.length, summary };
+      return {
+        ok: true,
+        path,
+        version: updated.version,
+        bytes: content.length,
+        summary,
+        ...sizeHint(path, content),
+      };
     }
 
     const { error } = await supabase
       .from("files")
       .insert({ project_id: pid, user_id: userId, path, content });
     if (error) throw new Error(error.message);
-    return { ok: true, path, version: 1, bytes: content.length, summary };
+    return {
+      ok: true,
+      path,
+      version: 1,
+      bytes: content.length,
+      summary,
+      ...sizeHint(path, content),
+    };
   }
 
   const writeFile = tool({
     description:
-      "يكتب أو يحدّث ملفاً فعلياً داخل مساحة عمل المشروع المحفوظة. استخدمه لكل مخرج ملموس.",
+      "يكتب أو يحدّث ملفاً فعلياً داخل مساحة عمل المشروع المحفوظة. للملفات القائمة الكبيرة استخدم edit_file بدلاً منه.",
     inputSchema: z.object({
       path: z.string().describe("مسار الملف داخل المشروع، مثل src/lib/auth.ts"),
       content: z.string().describe("المحتوى الكامل للملف بعد التعديل"),
       summary: z.string().describe("سطر واحد يشرح سبب هذا التغيير"),
+      force: z
+        .boolean()
+        .optional()
+        .describe("true فقط عند الحاجة الفعلية لإعادة كتابة ملف قائم كبير بالكامل"),
     }),
-    execute: async ({ path, content, summary }) => writeOne(path, content, summary),
+    execute: async ({ path, content, summary, force }) => writeOne(path, content, summary, force),
   });
 
   /** كتابة دفعة ملفات في نداء واحد — يقلّص عدد الجولات وزمن بناء المشروع بشكل كبير. */
@@ -856,6 +908,124 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
           ? "لا أخطاء في المتصفح — يمكنك متابعة design_review ثم النشر."
           : "أصلح كل خطأ ثم أعد browser_check حتى ok=true.",
       };
+    },
+  });
+
+  // ------------------------------------------------ متصفح الوكيل (Computer Use)
+
+  const browserOpenTool = tool({
+    description:
+      "يفتح جلسة متصفح Chromium دائمة خاصة بهذا المشروع (ملف تعريف محفوظ: الكوكيز وتسجيل الدخول تبقى بين الجولات). استخدمها لأي عمل على مواقع خارجية (Google Ads، لوحات تحكّم، تسجيل نطاق…). المستخدم يرى الجلسة حيّة في تبويب «المتصفح الحيّ» ويسجّل دخوله بنفسه — لا تطلب منه كلمة السر أبداً.",
+    inputSchema: z.object({
+      url: z.string().default("").describe("العنوان الأول لفتحه"),
+      allowlist: z
+        .array(z.string())
+        .default([])
+        .describe("نطاقات مسموحة فقط، مثل ['ads.google.com','google.com'] (فارغ = بلا قيد)"),
+    }),
+    execute: async ({ url, allowlist }) => {
+      if (!runtimeConfigured()) return { ok: false, error: "بيئة التنفيذ غير مفعّلة." };
+      const { projectId: pid } = guard();
+      const state = await browserOpen(pid, {
+        ...(url ? { url } : {}),
+        ...(allowlist.length ? { allowlist } : {}),
+      });
+      return {
+        ...state,
+        hint: "نفّذ browser_read لقراءة الصفحة قبل أي إجراء. إن ظهرت صفحة تسجيل دخول أو رمز تحقّق، توقّف واطلب من المستخدم إتمامها في تبويب «المتصفح الحيّ» عبر ask_user.",
+      };
+    },
+  });
+
+  const browserReadTool = tool({
+    description:
+      "يقرأ الصفحة الحالية في جلسة المتصفح: العنوان، النص المرئي، وقائمة مرقّمة بالعناصر التفاعلية مع إحداثياتها. نفّذه قبل كل إجراء وبعده لتتأكد من النتيجة — لا تنقر على العمياء.",
+    inputSchema: z.object({}),
+    execute: async () => {
+      const { projectId: pid } = guard();
+      const page = await browserRead(pid);
+      return {
+        ok: true,
+        url: page.url,
+        title: page.title,
+        text: page.text.slice(0, 4000),
+        elements: page.elements.slice(0, 80),
+        needsHuman:
+          /(sign in|log in|password|verification|2-step|تسجيل الدخول|كلمة المرور|رمز التحقق)/i.test(
+            `${page.title} ${page.text.slice(0, 1200)}`,
+          ),
+      };
+    },
+  });
+
+  const browserActTool = tool({
+    description:
+      "ينفّذ إجراءً واحداً داخل جلسة المتصفح: goto/click/type/press/scroll/select/wait/wait_for/back/reload. للنقر استخدم selector أو text أو إحداثيات x,y من browser_read. الخطوات الحسّاسة (دفع، شراء، إطلاق حملة، حذف) محجوبة تلقائياً: اسأل المستخدم بـ ask_user ثم أعد الإجراء مع approved=true.",
+    inputSchema: z.object({
+      kind: z.enum([
+        "goto",
+        "click",
+        "dblclick",
+        "type",
+        "press",
+        "scroll",
+        "select",
+        "wait",
+        "wait_for",
+        "back",
+        "reload",
+      ]),
+      url: z.string().default(""),
+      selector: z.string().default(""),
+      text: z.string().default(""),
+      key: z.string().default(""),
+      value: z.string().default(""),
+      x: z.number().default(-1),
+      y: z.number().default(-1),
+      dy: z.number().default(600),
+      ms: z.number().default(1200),
+      clear: z.boolean().default(false),
+      approved: z
+        .boolean()
+        .default(false)
+        .describe("اجعلها true فقط بعد موافقة صريحة من المستخدم على خطوة حسّاسة"),
+    }),
+    execute: async (input) => {
+      const { projectId: pid } = guard();
+      const action: Record<string, unknown> = { kind: input.kind, approved: input.approved };
+      if (input.url) action["url"] = input.url;
+      if (input.selector) action["selector"] = input.selector;
+      if (input.text) action["text"] = input.text;
+      if (input.key) action["key"] = input.key;
+      if (input.value) action["value"] = input.value;
+      if (input.x >= 0) action["x"] = input.x;
+      if (input.y >= 0) action["y"] = input.y;
+      if (input.kind === "scroll") action["dy"] = input.dy;
+      if (input.kind === "wait") action["ms"] = input.ms;
+      if (input.clear) action["clear"] = true;
+      try {
+        const result = await browserAct(pid, action as { kind: string });
+        const page = await browserRead(pid).catch(() => null);
+        return {
+          ok: true,
+          url: result.url,
+          title: result.title,
+          elements: page?.elements.slice(0, 60) ?? [],
+          text: page?.text.slice(0, 2500) ?? "",
+        };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+  });
+
+  const browserCloseTool = tool({
+    description:
+      "يغلق جلسة المتصفح للمشروع ويحرّر الموارد. ملف التعريف (تسجيل الدخول) يبقى محفوظاً للجولة القادمة.",
+    inputSchema: z.object({}),
+    execute: async () => {
+      const { projectId: pid } = guard();
+      return browserClose(pid);
     },
   });
 
@@ -1960,6 +2130,11 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
     shell: shell,
     dev_server: devServer,
     browser_check: browserCheckTool,
+    browser_open: browserOpenTool,
+    browser_read: browserReadTool,
+    browser_act: browserActTool,
+    browser_close: browserCloseTool,
+
     auto_repair: autoRepair,
     run_status: runStatus,
 
@@ -2559,8 +2734,16 @@ type ChatRequestBody = {
 };
 
 /** حد الخطوات لكل رسالة، وحد زمني يمنع قطع الاتصال في منتصف البناء. */
-const MAX_STEPS = Number(process.env["WEAVER_MAX_STEPS"] ?? 120);
+const MAX_STEPS = Number(process.env["WEAVER_MAX_STEPS"] ?? 160);
 const TIME_BUDGET_MS = Number(process.env["WEAVER_TIME_BUDGET_MS"] ?? 240_000);
+
+/** إعداد التفكير الموسّع: أقصى ذكاء افتراضياً مع إمكانية التخفيف عبر متغيّر بيئة. */
+function reasoningConfig(): { enabled: boolean; effort?: "high" | "medium" | "low" } {
+  const raw = (process.env["WEAVER_REASONING_EFFORT"] ?? "high").toLowerCase();
+  if (raw === "off" || raw === "false" || raw === "none") return { enabled: false };
+  const effort = raw === "low" || raw === "medium" ? raw : "high";
+  return { enabled: true, effort };
+}
 
 function budgetReached(startedAt: number) {
   return () => Date.now() - startedAt > TIME_BUDGET_MS;
@@ -2728,6 +2911,11 @@ const RETRYABLE_TOOLS = new Set([
   "shell",
   "dev_server",
   "browser_check",
+  "browser_open",
+  "browser_read",
+  "browser_act",
+  "browser_close",
+
   "auto_repair",
   "promote_build",
   "generate_image",
@@ -3207,10 +3395,8 @@ export const Route = createFileRoute("/api/chat")({
             stopWhen: [stepCountIs(platform.maxSteps || MAX_STEPS), budgetReached(startedAt)],
             maxOutputTokens: resolveMaxOutputTokens(platform.maxTokens),
 
-            // بلا تفكير موسّع: يقلّل زمن الصمت قبل أول توكن ويسرّع دورة الأدوات
-            providerOptions: {
-              openrouter: { reasoning: { enabled: false } },
-            },
+            // تفكير موسّع لأقصى ذكاء (قابل للضبط عبر WEAVER_REASONING_EFFORT: high|medium|low|off)
+            providerOptions: { openrouter: { reasoning: reasoningConfig() } },
 
             onStepFinish: () => {
               stepsUsed += 1;

@@ -53,6 +53,7 @@ import { formatUsd } from "@/lib/pricing";
 import { clearTerminal, useTerminalEvents, type TerminalEvent } from "@/lib/terminal-bus";
 import { cn } from "@/lib/utils";
 import { RuntimePanel } from "@/components/agent/runtime-panel";
+import { BrowserPanel } from "@/components/agent/browser-panel";
 
 type PreviewDevice = "desktop" | "tablet" | "mobile";
 
@@ -74,6 +75,7 @@ type Tab =
   | "files"
   | "preview"
   | "runtime"
+  | "browser"
   | "terminal"
   | "runs"
   | "checkpoints"
@@ -87,6 +89,8 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "files", label: "الملفات" },
   { id: "preview", label: "المعاينة" },
   { id: "runtime", label: "بيئة التنفيذ" },
+  { id: "browser", label: "المتصفح الحيّ" },
+
   { id: "terminal", label: "الطرفية" },
   { id: "runs", label: "السجل" },
   { id: "checkpoints", label: "الاسترجاع" },
@@ -361,6 +365,8 @@ export function ProjectPanel({
     runs: runs.length,
     terminal: terminalEvents.length,
     runtime: 0,
+    browser: 0,
+
     checkpoints: checkpoints.data?.length ?? 0,
 
     usage: 0,
@@ -685,6 +691,7 @@ export function ProjectPanel({
         {tab === "terminal" && <TerminalView events={terminalEvents} />}
 
         {tab === "runtime" && <RuntimePanel projectId={projectId} />}
+        {tab === "browser" && <BrowserPanel projectId={projectId} />}
 
         {tab === "runs" &&
           (runs.length === 0 ? (

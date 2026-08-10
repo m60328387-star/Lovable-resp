@@ -440,7 +440,32 @@ const server = http.createServer(async (req, res) => {
         });
         return json(res, result);
       }
+      case "/browser/session/open": {
+        const ab = await import("./agent-browser.mjs");
+        return json(res, await ab.openSession(projectId, body));
+      }
+      case "/browser/session/act": {
+        const ab = await import("./agent-browser.mjs");
+        return json(res, await ab.act(projectId, body.action ?? {}));
+      }
+      case "/browser/session/read": {
+        const ab = await import("./agent-browser.mjs");
+        return json(res, await ab.readPage(projectId));
+      }
+      case "/browser/session/frame": {
+        const ab = await import("./agent-browser.mjs");
+        return json(res, await ab.frame(projectId, Number(body.quality ?? 55)));
+      }
+      case "/browser/session/close": {
+        const ab = await import("./agent-browser.mjs");
+        return json(res, await ab.closeSession(projectId));
+      }
+      case "/browser/session/list": {
+        const ab = await import("./agent-browser.mjs");
+        return json(res, { sessions: ab.listSessions() });
+      }
       case "/workspace/reset":
+
         await stopDev(projectId);
         await rm(workspaceDir(projectId), { recursive: true, force: true });
         return json(res, { ok: true });

@@ -135,6 +135,66 @@ export const runtimeBrowserCheck = (
 export const runtimeReset = (projectId: string) =>
   call<{ ok: boolean }>("/workspace/reset", { projectId }, 60_000);
 
+// ------------------------------------------------------ جلسة متصفح دائمة (Computer Use)
+
+export type BrowserSessionState = {
+  ok: boolean;
+  url: string;
+  allowlist: string[];
+  startedAt: number;
+  log: Array<{ at: number; action: string; actor?: string; detail?: string; url?: string }>;
+};
+
+export type BrowserElement = {
+  i: number;
+  tag: string;
+  type: string;
+  label: string;
+  value: string;
+  x: number;
+  y: number;
+};
+
+export type BrowserPageRead = {
+  ok: boolean;
+  title: string;
+  url: string;
+  text: string;
+  elements: BrowserElement[];
+};
+
+export type BrowserFrame = {
+  ok: boolean;
+  url: string;
+  title: string;
+  width: number;
+  height: number;
+  image: string;
+};
+
+export type BrowserAction = Record<string, unknown> & { kind: string };
+
+export const browserOpen = (
+  projectId: string,
+  options: { url?: string; allowlist?: string[]; locale?: string; timezone?: string } = {},
+) => call<BrowserSessionState>("/browser/session/open", { projectId, ...options }, 90_000);
+
+export const browserAct = (projectId: string, action: BrowserAction) =>
+  call<{ ok: boolean; url: string; title: string }>(
+    "/browser/session/act",
+    { projectId, action },
+    90_000,
+  );
+
+export const browserRead = (projectId: string) =>
+  call<BrowserPageRead>("/browser/session/read", { projectId }, 60_000);
+
+export const browserFrame = (projectId: string, quality = 55) =>
+  call<BrowserFrame>("/browser/session/frame", { projectId, quality }, 60_000);
+
+export const browserClose = (projectId: string) =>
+  call<{ ok: boolean; closed: boolean }>("/browser/session/close", { projectId }, 30_000);
+
 /** فحص سريع لتوفّر بيئة التنفيذ (يُستعمل في الصحة والواجهة). */
 export async function runtimeHealthy() {
   if (!runtimeConfigured()) return false;

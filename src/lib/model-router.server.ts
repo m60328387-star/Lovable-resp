@@ -70,11 +70,12 @@ export function candidatesFor(kind: TaskKind, openRouterModel?: string): Candida
         orFallback("google/gemini-flash-1.5"),
       ];
 
-    // الاستدلال والقرارات المعمارية: OpenRouter (أفضل جودة) ثم Gemini Pro
+    // الاستدلال والقرارات المعمارية: أقوى نموذج أولاً ثم بدائل أرخص
     case "reasoning":
     case "coding":
     default:
       return [
+        orFallback("anthropic/claude-sonnet-4.6"),
         orFallback("deepseek/deepseek-chat-v3.1"),
         { provider: "gemini", model: envModel("GEMINI_REASONING_MODEL", "gemini-pro-latest") },
 

@@ -14,6 +14,12 @@ export const TOOL_LABELS: Record<string, string> = {
   run_command: "تنفيذ أمر",
   run_status: "حالة التنفيذ",
   run_checks: "فحص الجودة",
+  browser_check: "فحص المتصفح",
+  browser_open: "فتح المتصفح",
+  browser_read: "قراءة الصفحة",
+  browser_act: "إجراء في المتصفح",
+  browser_close: "إغلاق المتصفح",
+
   fix_errors: "إصلاح الأخطاء",
   visual_audit: "تدقيق بصري",
   design_review: "مراجعة التصميم",
