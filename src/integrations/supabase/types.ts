@@ -316,6 +316,50 @@ export type Database = {
           },
         ]
       }
+      message_sync_events: {
+        Row: {
+          created_at: string
+          details: Json
+          error_code: string | null
+          error_message: string | null
+          id: string
+          message_count: number
+          project_id: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          details?: Json
+          error_code?: string | null
+          error_message?: string | null
+          id?: string
+          message_count?: number
+          project_id: string
+          status: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          details?: Json
+          error_code?: string | null
+          error_message?: string | null
+          id?: string
+          message_count?: number
+          project_id?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_sync_events_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           created_at: string
@@ -821,6 +865,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      append_message_atomic: {
+        Args: { p_message: Json; p_project_id: string; p_user_id: string }
+        Returns: Json
+      }
+      save_conversation_atomic: {
+        Args: { p_messages: Json; p_project_id: string; p_user_id: string }
+        Returns: Json
+      }
       weaver_exec_sql: {
         Args: { p_schema: string; p_sql: string }
         Returns: Json

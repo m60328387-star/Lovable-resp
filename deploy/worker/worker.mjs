@@ -18,6 +18,7 @@ const TOKEN = process.env["WEAVER_WORKER_TOKEN"];
 const IDLE_MS = Number(process.env["WORKER_IDLE_INTERVAL_MS"] ?? 5000);
 const BUSY_MS = Number(process.env["WORKER_BUSY_INTERVAL_MS"] ?? 500);
 const CONCURRENCY = Number(process.env["WORKER_CONCURRENCY"] ?? 1);
+const INTEGRITY_INTERVAL_MS = Number(process.env["MESSAGE_INTEGRITY_INTERVAL_MS"] ?? 900000);
 
 if (!TOKEN || TOKEN.length < 16) {
   console.error("[worker] WEAVER_WORKER_TOKEN is missing or too short.");
@@ -64,7 +65,23 @@ async function loop(lane) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+async function verifyMessageIntegrity() {
+  try {
+    const res = await fetch(`${API_URL}/api/public/hooks/message-integrity`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    const body = await res.text();
+    if (!res.ok) throw new Error(`HTTP ${res.status} ${body.slice(0, 200)}`);
+    console.log("[worker:message-integrity]", body.slice(0, 500));
+  } catch (error) {
+    console.error("[worker:message-integrity]", error?.message ?? error);
+  }
+}
+
 beat();
 setInterval(beat, 15_000);
+setInterval(() => void verifyMessageIntegrity(), INTEGRITY_INTERVAL_MS);
+void verifyMessageIntegrity();
 console.log(`[worker] started → ${API_URL} (lanes: ${CONCURRENCY})`);
 for (let i = 1; i <= CONCURRENCY; i += 1) loop(i);

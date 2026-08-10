@@ -78,6 +78,7 @@ services:
       - WORKER_API_URL=http://app:3000
       - WORKER_IDLE_INTERVAL_MS=${WORKER_IDLE_INTERVAL_MS:-5000}
       - WORKER_CONCURRENCY=${WORKER_CONCURRENCY:-1}
+      - MESSAGE_INTEGRITY_INTERVAL_MS=${MESSAGE_INTEGRITY_INTERVAL_MS:-900000}
     networks:
       - weaver
     healthcheck:
@@ -91,7 +92,7 @@ services:
       start_period: 60s
     depends_on:
       app:
-        condition: service_started
+        condition: service_healthy
 
 
   db:

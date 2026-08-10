@@ -25,6 +25,7 @@ import { Route as AuthenticatedCThreadIdRouteImport } from './routes/_authentica
 import { Route as ApiPublicHealthRouteImport } from './routes/api/public/health'
 import { Route as ApiPublicLiveRouteImport } from './routes/api/public/live'
 import { Route as ApiPublicExecutorActionRouteImport } from './routes/api/public/executor/$action'
+import { Route as ApiPublicHooksMessageIntegrityRouteImport } from './routes/api/public/hooks/message-integrity'
 import { Route as ApiPublicHooksSchedulerRouteImport } from './routes/api/public/hooks/scheduler'
 import { Route as ApiPublicRtSplatRouteImport } from './routes/api/public/rt/$'
 import { Route as ApiPublicSiteSplatRouteImport } from './routes/api/public/site/$'
@@ -110,6 +111,12 @@ const ApiPublicExecutorActionRoute = ApiPublicExecutorActionRouteImport.update({
   path: '/api/public/executor/$action',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicHooksMessageIntegrityRoute =
+  ApiPublicHooksMessageIntegrityRouteImport.update({
+    id: '/api/public/hooks/message-integrity',
+    path: '/api/public/hooks/message-integrity',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksSchedulerRoute = ApiPublicHooksSchedulerRouteImport.update({
   id: '/api/public/hooks/scheduler',
   path: '/api/public/hooks/scheduler',
@@ -152,6 +159,7 @@ export interface FileRoutesByFullPath {
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/live': typeof ApiPublicLiveRoute
   '/api/public/executor/$action': typeof ApiPublicExecutorActionRoute
+  '/api/public/hooks/message-integrity': typeof ApiPublicHooksMessageIntegrityRoute
   '/api/public/hooks/scheduler': typeof ApiPublicHooksSchedulerRoute
   '/api/public/rt/$': typeof ApiPublicRtSplatRoute
   '/api/public/site/$': typeof ApiPublicSiteSplatRoute
@@ -174,6 +182,7 @@ export interface FileRoutesByTo {
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/live': typeof ApiPublicLiveRoute
   '/api/public/executor/$action': typeof ApiPublicExecutorActionRoute
+  '/api/public/hooks/message-integrity': typeof ApiPublicHooksMessageIntegrityRoute
   '/api/public/hooks/scheduler': typeof ApiPublicHooksSchedulerRoute
   '/api/public/rt/$': typeof ApiPublicRtSplatRoute
   '/api/public/site/$': typeof ApiPublicSiteSplatRoute
@@ -198,6 +207,7 @@ export interface FileRoutesById {
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/live': typeof ApiPublicLiveRoute
   '/api/public/executor/$action': typeof ApiPublicExecutorActionRoute
+  '/api/public/hooks/message-integrity': typeof ApiPublicHooksMessageIntegrityRoute
   '/api/public/hooks/scheduler': typeof ApiPublicHooksSchedulerRoute
   '/api/public/rt/$': typeof ApiPublicRtSplatRoute
   '/api/public/site/$': typeof ApiPublicSiteSplatRoute
@@ -222,6 +232,7 @@ export interface FileRouteTypes {
     | '/api/public/health'
     | '/api/public/live'
     | '/api/public/executor/$action'
+    | '/api/public/hooks/message-integrity'
     | '/api/public/hooks/scheduler'
     | '/api/public/rt/$'
     | '/api/public/site/$'
@@ -244,6 +255,7 @@ export interface FileRouteTypes {
     | '/api/public/health'
     | '/api/public/live'
     | '/api/public/executor/$action'
+    | '/api/public/hooks/message-integrity'
     | '/api/public/hooks/scheduler'
     | '/api/public/rt/$'
     | '/api/public/site/$'
@@ -267,6 +279,7 @@ export interface FileRouteTypes {
     | '/api/public/health'
     | '/api/public/live'
     | '/api/public/executor/$action'
+    | '/api/public/hooks/message-integrity'
     | '/api/public/hooks/scheduler'
     | '/api/public/rt/$'
     | '/api/public/site/$'
@@ -283,6 +296,7 @@ export interface RootRouteChildren {
   ApiPublicHealthRoute: typeof ApiPublicHealthRoute
   ApiPublicLiveRoute: typeof ApiPublicLiveRoute
   ApiPublicExecutorActionRoute: typeof ApiPublicExecutorActionRoute
+  ApiPublicHooksMessageIntegrityRoute: typeof ApiPublicHooksMessageIntegrityRoute
   ApiPublicHooksSchedulerRoute: typeof ApiPublicHooksSchedulerRoute
   ApiPublicRtSplatRoute: typeof ApiPublicRtSplatRoute
   ApiPublicSiteSplatRoute: typeof ApiPublicSiteSplatRoute
@@ -404,6 +418,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicExecutorActionRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/message-integrity': {
+      id: '/api/public/hooks/message-integrity'
+      path: '/api/public/hooks/message-integrity'
+      fullPath: '/api/public/hooks/message-integrity'
+      preLoaderRoute: typeof ApiPublicHooksMessageIntegrityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/scheduler': {
       id: '/api/public/hooks/scheduler'
       path: '/api/public/hooks/scheduler'
@@ -476,6 +497,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicHealthRoute: ApiPublicHealthRoute,
   ApiPublicLiveRoute: ApiPublicLiveRoute,
   ApiPublicExecutorActionRoute: ApiPublicExecutorActionRoute,
+  ApiPublicHooksMessageIntegrityRoute: ApiPublicHooksMessageIntegrityRoute,
   ApiPublicHooksSchedulerRoute: ApiPublicHooksSchedulerRoute,
   ApiPublicRtSplatRoute: ApiPublicRtSplatRoute,
   ApiPublicSiteSplatRoute: ApiPublicSiteSplatRoute,
@@ -485,13 +507,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

@@ -467,22 +467,46 @@ function ChatSurface({
   // متابعة تلقائية عند توقّف الجولة بسبب حد الخطوات/الوقت (بحد أقصى 6 جولات متتالية)
   const [autoContinue, setAutoContinue] = useState(true);
   const [pendingContinue, setPendingContinue] = useState(false);
+  const [syncState, setSyncState] = useState<"idle" | "checking" | "pending" | "completed" | "failed">("idle");
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const syncRetryRef = useRef(0);
+  const syncRetryTimerRef = useRef<number | null>(null);
+  const persistRef = useRef<(messages: UIMessage[]) => Promise<void>>(async () => undefined);
   const autoRunsRef = useRef(0);
   const nextActionRef = useRef<string | null>(null);
 
   const persist = useCallback(
     async (all: UIMessage[]) => {
+      const unique = all.filter((message, index) => !message.id || all.findIndex((item) => item.id === message.id) === index);
+      setSyncState("checking");
+      if (unique.length !== all.length) {
+        setSyncState("failed");
+        setSyncError("أوقف التحقق الحفظ لأن السجل المحلي يحتوي رسائل مكررة.");
+        return;
+      }
+      setSyncState("pending");
       try {
         await saveConversation({
-          data: { projectId: threadId, messages: all as unknown as { role: string }[] },
+          data: { projectId: threadId, messages: unique as unknown as { role: string }[] },
         });
+        syncRetryRef.current = 0;
+        setSyncError(null);
+        setSyncState("completed");
         void queryClient.invalidateQueries({ queryKey: ["projects"] });
-      } catch {
-        toast.error("تعذّر حفظ المحادثة في السحابة");
+      } catch (error) {
+        const reason=error instanceof Error?error.message:"سبب غير معروف";
+        setSyncState("failed");
+        setSyncError(reason);
+        if(syncRetryRef.current<4){
+          syncRetryRef.current+=1;
+          if (syncRetryTimerRef.current) window.clearTimeout(syncRetryTimerRef.current);
+          syncRetryTimerRef.current=window.setTimeout(()=>void persistRef.current(unique),Math.min(1000*2**syncRetryRef.current,15000));
+        } else toast.error(reason);
       }
     },
     [queryClient, threadId],
   );
+  persistRef.current = persist;
 
   const persistToolOutputs = useCallback(
     async (message: UIMessage) => {
@@ -747,6 +771,13 @@ function ChatSurface({
                 deployedUrl={loadedProject.deployedUrl}
                 isLive={isBusy || bgActive}
               />
+            )}
+            {syncState !== "idle" && (
+              <div className={cn("flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px]",syncState==="failed"?"border-destructive/40 bg-destructive/5 text-destructive":"bg-surface/60 text-muted-foreground")}>
+                {syncState === "completed" ? <CheckCircle2 className="size-3.5 text-primary" /> : syncState === "failed" ? <XCircle className="size-3.5" /> : <Loader2 className="size-3.5 animate-spin text-primary" />}
+                <span>{syncState === "checking" ? "التحقق من عدم وجود تكرارات…" : syncState === "pending" ? "مزامنة رسائل السحابة قيد التنفيذ…" : syncState === "completed" ? "اكتملت مزامنة رسائل السحابة" : `فشلت المزامنة: ${syncError ?? "سبب غير معروف"}`}</span>
+                {syncState === "failed" && <button type="button" onClick={()=>{syncRetryRef.current=0;void persist(messagesRef.current);}} className="ms-auto font-semibold underline">إعادة المحاولة</button>}
+              </div>
             )}
             {messages.length === 0 && (
               <p className="rounded-xl border border-dashed bg-surface/60 px-4 py-6 text-center text-sm text-muted-foreground">

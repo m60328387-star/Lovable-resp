@@ -208,23 +208,7 @@ export const Route = createFileRoute("/api/public/worker/tick")({
           // إلحاق ردّ المساعد بالمحادثة حتى يراه المستخدم عند العودة
           if (projectId && result.text.trim()) {
             try {
-              const rows = await sql`
-                SELECT COALESCE(MAX(position), -1) + 1 AS next
-                FROM public.messages WHERE project_id = ${projectId}
-              `;
-              const next = (rows[0] as unknown as { next: number }).next ?? 0;
-              await sql`
-                INSERT INTO public.messages (project_id, user_id, role, parts, position)
-                VALUES (
-                  ${projectId}, ${job.user_id}, 'assistant',
-                  ${sql.json({
-                    id: `bg-${job.id}-${next}`,
-                    role: "assistant",
-                    parts: [{ type: "text", text: result.text }],
-                  } as never)},
-                  ${next}
-                )
-              `;
+              await sql`SELECT public.append_message_atomic(${projectId},${job.user_id},${sql.json({id:`bg-${job.id}`,role:"assistant",parts:[{type:"text",text:result.text}]} as never)})`;
             } catch (error) {
               console.error("[weaver:worker:persist]", error);
             }

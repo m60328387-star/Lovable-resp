@@ -192,53 +192,19 @@ export const saveConversation = createServerFn({ method: "POST" })
       return { ok: true, skipped: true };
     }
 
-    // Serialize saves per project. A transaction alone does not stop two
-    // concurrent autosaves from deleting/inserting the same positions.
-    await sql.begin(async (tx) => {
-      await tx`SELECT pg_advisory_xact_lock(hashtextextended(${data.projectId}, 0))`;
-      const project = await tx`
-        SELECT id FROM public.projects
-        WHERE id = ${data.projectId} AND user_id = ${context.userId}
-        FOR UPDATE
-      `;
-      if (project.length === 0) throw new Error("المشروع غير موجود أو لا تملك صلاحية تعديله.");
-
-      const existing = await tx`
-        SELECT count(DISTINCT position)::int AS count
-        FROM public.messages
-        WHERE project_id = ${data.projectId}
-      `;
-      const existingCount = (existing[0] as unknown as { count: number }).count ?? 0;
-      if (existingCount > data.messages.length) return;
-
-      for (const [index, message] of data.messages.entries()) {
-        await tx`
-          INSERT INTO public.messages (project_id, user_id, role, parts, position)
-          VALUES (
-            ${data.projectId},
-            ${context.userId},
-            ${String(message.role)},
-            ${tx.json(message as never)},
-            ${index}
-          )
-          ON CONFLICT (project_id, position) DO UPDATE SET
-            user_id = EXCLUDED.user_id,
-            role = EXCLUDED.role,
-            parts = EXCLUDED.parts
-        `;
-      }
-      await tx`
-        DELETE FROM public.messages
-        WHERE project_id = ${data.projectId} AND position >= ${data.messages.length}
-      `;
-    });
-
-    await sql`
-      UPDATE public.projects SET updated_at = now()
-      WHERE id = ${data.projectId} AND user_id = ${context.userId}
-    `;
-
-    return { ok: true };
+    const ids = data.messages.map((message) => String(message.id ?? "")).filter(Boolean);
+    if (new Set(ids).size !== ids.length) throw new Error("تم إيقاف الحفظ: توجد رسائل مكررة في السجل المحلي.");
+    await sql`INSERT INTO public.message_sync_events(project_id,user_id,status,message_count,details) VALUES(${data.projectId},${context.userId},'pending',${data.messages.length},${sql.json({source:"autosave"} as never)})`;
+    try {
+      const [result] = await sql`SELECT public.save_conversation_atomic(${data.projectId},${context.userId},${sql.json(data.messages as never)}) result`;
+      await sql`INSERT INTO public.message_sync_events(project_id,user_id,status,message_count,details) VALUES(${data.projectId},${context.userId},'completed',${data.messages.length},${sql.json({result:(result as {result:unknown}).result} as never)})`;
+      return { ok: true, checked: true, count: data.messages.length };
+    } catch (error) {
+      const reason=error instanceof Error?error.message:"unknown_sync_error";
+      console.error("[weaver:message-sync]",{projectId:data.projectId,count:data.messages.length,reason});
+      await sql`INSERT INTO public.message_sync_events(project_id,user_id,status,message_count,error_code,error_message) VALUES(${data.projectId},${context.userId},'failed',${data.messages.length},'SAVE_FAILED',${reason})`;
+      throw new Error(`فشل تحديث رسائل السحابة: ${reason}`);
+    }
   });
 
 export const saveSpec = createServerFn({ method: "POST" })
