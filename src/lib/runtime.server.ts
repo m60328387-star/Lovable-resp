@@ -200,7 +200,10 @@ export const browserClose = (projectId: string) =>
 export async function runtimeHealthy() {
   if (!runtimeConfigured()) return false;
   try {
-    const res = await fetch(`${runtimeUrl()}/health`, { signal: AbortSignal.timeout(4000) });
+    const res = await fetch(`${runtimeUrl()}/health`, { 
+      signal: AbortSignal.timeout(4000),
+      headers: { "x-weaver-token": runtimeToken() }
+    });
     return res.ok;
   } catch {
     return false;
