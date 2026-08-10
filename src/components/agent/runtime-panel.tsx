@@ -11,6 +11,7 @@ import {
   stopRuntimeDev,
   syncRuntimeWorkspace,
 } from "@/lib/runtime.functions";
+import { runtimeConfigured } from "@/lib/runtime.server";
 import { cn } from "@/lib/utils";
 
 type Line = { id: number; text: string; kind: "cmd" | "out" | "err" };
