@@ -329,6 +329,79 @@ export function workspaceTools(
     return { supabase: auth.supabase, userId: auth.userId, projectId };
   };
 
+  // ===== عقد التصميم الإلزامي =====
+  // وجود هذه الملفات الثلاثة في مساحة العمل هو الشرط الوحيد لفتح كتابة صفحات الواجهة.
+  // بهذا لا يستطيع الوكيل تجاوز طقم البداية ولا الاتجاه البصري مهما اختصر.
+  const KIT_DOC = "brand/KIT.md";
+  const DIRECTION_DOC = "brand/DIRECTION.md";
+  const TOKENS_FILE = "brand/tokens.css";
+  let designContractReady = false;
+
+  async function readDoc(path: string) {
+    const { supabase, projectId: pid } = guard();
+    const { data } = await supabase
+      .from("files")
+      .select("content")
+      .eq("project_id", pid)
+      .eq("path", path)
+      .maybeSingle();
+    return data?.content ?? null;
+  }
+
+  async function putDoc(path: string, content: string) {
+    const { supabase, userId, projectId: pid } = guard();
+    const { data: existing } = await supabase
+      .from("files")
+      .select("id, version")
+      .eq("project_id", pid)
+      .eq("path", path)
+      .maybeSingle();
+    if (existing) {
+      await supabase
+        .from("files")
+        .update({ content, version: existing.version + 1 })
+        .eq("id", existing.id);
+    } else {
+      await supabase.from("files").insert({ project_id: pid, user_id: userId, path, content });
+    }
+  }
+
+  /** يقرأ الاتجاه البصري المعتمد للمشروع من brand/DIRECTION.md. */
+  async function readChosenDirection() {
+    const doc = await readDoc(DIRECTION_DOC);
+    if (!doc) return null;
+    const field = (key: string) =>
+      doc.match(new RegExp(`^${key}:\\s*(.+)$`, "m"))?.[1]?.trim() ?? "";
+    const id = field("id");
+    if (!id) return null;
+    return { id, personality: field("personality"), baseColor: field("baseColor") };
+  }
+
+  /** يمنع كتابة أي صفحة واجهة قبل إغلاق: طقم البداية + الاتجاه البصري + توكنات الهوية. */
+  async function designContractBlocker(path: string) {
+    if (designContractReady) return null;
+    const clean = path.replace(/^\.?\//, "");
+    if (clean.startsWith("brand/")) return null;
+    if (!/\.(html|css)$/i.test(clean)) return null;
+    const [kit, direction, tokens] = await Promise.all([
+      readDoc(KIT_DOC),
+      readDoc(DIRECTION_DOC),
+      readDoc(TOKENS_FILE),
+    ]);
+    if (kit && direction && tokens) {
+      designContractReady = true;
+      return null;
+    }
+    const missing = [
+      kit ? null : "طقم البداية (starter_kit بمعرّف)",
+      direction
+        ? null
+        : "الاتجاه البصري المعتمد (design_directions ثم ask_user ثم design_directions بـ chosen)",
+      tokens ? null : "توكنات الهوية (brand_kit)",
+    ].filter(Boolean);
+    return `ممنوع كتابة ${clean} قبل إغلاق عقد التصميم. الناقص: ${missing.join(" — ")}. الترتيب الملزم: starter_kit(id) ← design_directions(kit) + ask_user ← design_directions(chosen) ← brand_kit ← ثم ابدأ الكتابة.`;
+  }
+
   /** الكتابة الفعلية لملف واحد — يشاركها write_file و write_files. */
   async function writeOne(path: string, content: string, summary: string, force = false) {
     // لا نرفض الملفات الكبيرة: الرفض كان يضيّع محتوى كتبه النموذج فعلاً (يظهر في الدردشة ولا يُحفظ).
@@ -339,7 +412,10 @@ export function workspaceTools(
         error: "الملف أكبر من 400000 حرف. اكتب الجزء الأول ثم أكمل عبر append_file.",
       };
     }
+    const blocked = await designContractBlocker(path);
+    if (blocked) return { ok: false, path, error: blocked };
     const { supabase, userId, projectId: pid } = guard();
+
     const { data: existing } = await supabase
       .from("files")
       .select("id, version, content")
@@ -1177,7 +1253,9 @@ export function workspaceTools(
       const scoreMatch = /SCORE\s*:\s*(\d{1,3})/i.exec(result.review);
       const score = scoreMatch ? Number(scoreMatch[1]) : null;
       // بوابة الجودة البصرية تُسجَّل في قاعدة البيانات حتى يمنع publish_site النشر بلا مراجعة ناجحة.
-      const passed = result.ok && verdict === "pass" && (score === null || score >= 80);
+      // درجة أقل من 85 = مرفوض: هذا ما يمنع الصفحات «العادية» من الوصول للمستخدم.
+      const passed = result.ok && verdict === "pass" && score !== null && score >= 85;
+
       await supabase
         .from("runs")
         .insert({
@@ -1225,10 +1303,21 @@ export function workspaceTools(
     }),
     execute: async ({ brandName, personality, baseColor, locale, scheme, logoStyle }) => {
       const { supabase, userId, projectId: pid } = guard();
+      // الاتجاه البصري المعتمد يفرض نفسه على الهوية — لا يستطيع الوكيل الارتجال بلون أو طابع آخر.
+      const chosenDirection = await readChosenDirection();
+      if (!chosenDirection) {
+        return {
+          ok: false,
+          error:
+            "لا يوجد اتجاه بصري معتمد لهذا المشروع. نفّذ starter_kit(id) ثم design_directions(kit) واعرض الخيارات بـ ask_user، وبعد ردّ المستخدم نفّذ design_directions(chosen) ثم أعد brand_kit.",
+        };
+      }
+      const effectivePersonality = chosenDirection.personality || personality;
+      const effectiveBaseColor = chosenDirection.baseColor || baseColor;
       const kit = buildBrandKit({
         brandName,
-        personality,
-        ...(baseColor?.trim() ? { baseColor } : {}),
+        personality: effectivePersonality,
+        ...(effectiveBaseColor?.trim() ? { baseColor: effectiveBaseColor } : {}),
         locale,
         scheme,
         logoStyle,
@@ -1257,11 +1346,14 @@ export function workspaceTools(
       }
 
       return {
+        ok: true,
         written,
+        appliedDirection: chosenDirection.id,
         palette: kit.palette,
         fonts: kit.fonts,
         summary: kit.summary,
         headSnippet: kit.files.find((f) => f.path === "brand/head.html")?.content ?? "",
+        note: `الهوية مُشتقّة حرفياً من الاتجاه المعتمد (${chosenDirection.id}). ممنوع كتابة أي لون مباشر بعد الآن — استعمل متغيّرات brand/tokens.css فقط.`,
       };
     },
   });
@@ -1288,6 +1380,26 @@ export function workspaceTools(
         return { ok: false, error: `طقم غير معروف: ${id}`, kits: listStarterKits() };
       }
       const { kit, plan, snippets } = planned;
+      // تثبيت الطقم في مساحة العمل — هو أول شرط من شروط فتح كتابة الواجهة.
+      await putDoc(
+        KIT_DOC,
+        [
+          `# طقم البداية المعتمد`,
+          `id: ${kit.id}`,
+          `name: ${kit.name}`,
+          `personality: ${kit.personality}`,
+          `baseColor: ${kit.baseColor}`,
+          ``,
+          `## الأقسام الإلزامية`,
+          ...kit.required.map((r) => `- ${r}`),
+          ``,
+          `## معايير القبول`,
+          ...kit.acceptance.map((a) => `- ${a}`),
+          ``,
+          `## محظورات`,
+          ...kit.avoid.map((a) => `- ${a}`),
+        ].join("\n"),
+      );
       return {
         ok: true,
         kit: {
@@ -1303,11 +1415,13 @@ export function workspaceTools(
         copyContract: kit.copyContract,
         ...(withSnippets ? { snippets } : { snippetIds: snippets.map((s) => s.id) }),
         next: [
-          `نفّذ brand_kit بـ personality=${kit.personality} و baseColor=${kit.baseColor}.`,
+          `نفّذ design_directions بـ kit=${kit.id} واعرض الاتجاهات الثلاثة على المستخدم بـ ask_user.`,
+          "بعد ردّه نفّذ design_directions بـ chosen ثم brand_kit.",
           "نفّذ copy_brief لكتابة كل النصوص أولاً كقائمة.",
           "اجلب القصاصات بـ ui_snippet وألصقها بالترتيب المذكور في pages.",
           "بعد كل صفحة نفّذ copy_audit ثم browser_check حتى designGate.pass=true.",
         ],
+        gate: "كتابة ملفات html/css محجوبة حتى ينتهي: design_directions(chosen) ثم brand_kit.",
       };
     },
   });
@@ -2073,17 +2187,41 @@ export function workspaceTools(
             options: listDirections().map((d) => d.id),
           };
         }
+        // تثبيت الاتجاه في مساحة العمل — brand_kit سيشتقّ منه اللون والطابع حرفياً.
+        await putDoc(
+          DIRECTION_DOC,
+          [
+            `# الاتجاه البصري المعتمد`,
+            `id: ${dir.id}`,
+            `name: ${dir.name}`,
+            `personality: ${dir.personality}`,
+            `baseColor: ${dir.baseColor}`,
+            `signature: ${dir.signature}`,
+            ``,
+            `## محظورات هذا الاتجاه`,
+            ...dir.avoid.map((a) => `- ${a}`),
+          ].join("\n"),
+        );
         return {
           ok: true,
           direction: dir,
           next: [
-            `نفّذ brand_kit بـ personality=${dir.personality} و baseColor=${dir.baseColor}.`,
+            "نفّذ brand_kit الآن — سيأخذ الطابع واللون من هذا الاتجاه تلقائياً.",
             `طبّق التوقيع البصري: ${dir.signature}`,
             `ممنوع في هذا الاتجاه: ${dir.avoid.join("، ")}`,
             "لا تخلط عناصر من اتجاه آخر مهما بدت جميلة.",
           ],
         };
       }
+      if (!kit && !(await readDoc(KIT_DOC))) {
+        return {
+          ok: false,
+          error:
+            "لم يُعتمد طقم بداية بعد. نفّذ starter_kit بلا id لرؤية الأطقم، ثم starter_kit بالمعرّف المناسب، ثم أعد design_directions.",
+          kits: listStarterKits(),
+        };
+      }
+
       const q = directionsQuestion(kit);
       return {
         ok: true,

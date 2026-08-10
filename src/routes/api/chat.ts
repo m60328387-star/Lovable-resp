@@ -148,9 +148,10 @@ export function isBuildIncomplete(state: LifecycleState, buildIntent: boolean) {
 /** الخطوة التالية الوحيدة المطلوبة لإغلاق البناء — تُرسَل للواجهة وتُحقن في التعليمات. */
 export function nextBuildAction(state: LifecycleState): string | null {
   if (!state.hasFiles && !state.hasDesignBlueprint)
-    return "أنشئ عقد التصميم عبر design_blueprint ثم brand_kit قبل كتابة ملفات الواجهة.";
+    return "أغلق عقد التصميم أولاً: starter_kit(id) ← design_directions + ask_user ← design_directions(chosen) ← design_blueprint ← brand_kit. كتابة html/css محجوبة قبل ذلك.";
   if (!state.hasFiles)
-    return "اكتب ملفات المشروع الفعلية عبر write_file (ابدأ بـ index.html و styles.css).";
+    return "اكتب ملفات المشروع الفعلية عبر write_files (index.html + styles.css معاً) من قصاصات ui_snippet.";
+
   if (!state.hasTasks || !state.allTasksDone)
     return "نفّذ حزمة المهمة الجاهزة من دفتر التنفيذ، ثم أغلقها عبر update_task مع دليل قبول؛ لا تنتقل للفحص النهائي قبل انتهاء الرسم.";
   if (!state.checksPassed)
