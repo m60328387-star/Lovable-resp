@@ -245,8 +245,49 @@ export const deployPlatform = createServerFn({ method: "POST" })
     }
     // النشر يمرّ عبر الحارس: فحص صحي بعد النشر وتراجع تلقائي عند الفشل.
     const result = data.ref ? await runDeployHook(action, data.ref) : await deployWithGuard(action);
-    await recordDeploy(context.userId, action, result);
+    // نُسجّل الإصدار المنشور حتى تعمل مقارنة المعاينة/الإنتاج وزر التراجع الآمن.
+    const { getGithubHead } = await import("@/lib/platform.server");
+    const deployedRef =
+      data.ref ?? (action === "deploy" ? ((await getGithubHead()).sha ?? null) : null);
+    await recordDeploy(context.userId, action, result, null, deployedRef);
     return result;
+  });
+
+/** يشغّل اختبارات الدخان يدوياً على نسخة المعاينة الحالية. */
+export const runSmokeTests = createServerFn({ method: "POST" })
+  .middleware([requireWeaverAuth])
+  .handler(async ({ context }) => {
+    const { getStageState, getGithubHead, runStageSmoke } = await import("@/lib/platform.server");
+    const head = await getGithubHead();
+    const stage = await getStageState(head.sha ?? null);
+    return runStageSmoke(stage.ref ?? head.sha ?? null, context.userId);
+  });
+
+/** مقارنة الملفات بين ما يعمل على الإنتاج وما هو مبنيّ في المعاينة. */
+export const getStageDiff = createServerFn({ method: "POST" })
+  .middleware([requireWeaverAuth])
+  .handler(async () => {
+    const { getStageProductionDiff } = await import("@/lib/platform.server");
+    return getStageProductionDiff();
+  });
+
+/** تراجع آمن إلى آخر إصدار إنتاج مستقر (بتأكيد مزدوج من الواجهة). */
+export const rollbackToStable = createServerFn({ method: "POST" })
+  .middleware([requireWeaverAuth])
+  .inputValidator((input: unknown) =>
+    z.object({ confirm: z.literal(true), confirmAgain: z.literal(true) }).parse(input),
+  )
+  .handler(async ({ context }) => {
+    const { runDeployHook, recordDeploy, getLastStableRef, verifyDeployHealth } =
+      await import("@/lib/platform.server");
+    const target = await getLastStableRef();
+    const result = await runDeployHook("rollback", target ?? undefined);
+    await recordDeploy(context.userId, "rollback", result, null, target);
+    if (!result.pending && result.ok) {
+      const health = await verifyDeployHealth(5, 5000);
+      return { ...result, target, health };
+    }
+    return { ...result, target };
   });
 
 /** يبني نسخة معاينة على الخادم من آخر إصدار (أو إصدار محدّد) دون لمس الإنتاج. */
@@ -274,12 +315,17 @@ export const stagePlatform = createServerFn({ method: "POST" })
 export const getStagePreview = createServerFn({ method: "POST" })
   .middleware([requireWeaverAuth])
   .handler(async () => {
-    const { getStageState, getGithubHead, syncPendingDeploys } =
+    const { getStageState, getGithubHead, syncPendingDeploys, getSmokeReport, runStageSmoke } =
       await import("@/lib/platform.server");
     await syncPendingDeploys();
     const head = await getGithubHead();
     const stage = await getStageState(head.sha ?? null);
-    return { stage, head };
+    // اختبارات دخانية تلقائية فور اكتمال البناء بنجاح ولم تُختبر بعد.
+    let smoke = stage.ref ? await getSmokeReport(stage.ref) : null;
+    if (stage.status === "success" && stage.ref && !smoke) {
+      smoke = await runStageSmoke(stage.ref, null);
+    }
+    return { stage, head, smoke };
   });
 
 /** حالة النشر الحالية: خطّاف كونتابو، GitHub، والإصدار الأخير. */

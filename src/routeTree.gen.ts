@@ -19,6 +19,7 @@ import { Route as AuthenticatedMonitorRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedPlatformRouteImport } from './routes/_authenticated/platform'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedStatusRouteImport } from './routes/_authenticated/status'
+import { Route as AuthenticatedTraceRouteImport } from './routes/_authenticated/trace'
 import { Route as AuthenticatedWorkerRouteImport } from './routes/_authenticated/worker'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as SSplatRouteImport } from './routes/s/$'
@@ -80,6 +81,11 @@ const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
 const AuthenticatedStatusRoute = AuthenticatedStatusRouteImport.update({
   id: '/status',
   path: '/status',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedTraceRoute = AuthenticatedTraceRouteImport.update({
+  id: '/trace',
+  path: '/trace',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedWorkerRoute = AuthenticatedWorkerRouteImport.update({
@@ -159,6 +165,7 @@ export interface FileRoutesByFullPath {
   '/platform': typeof AuthenticatedPlatformRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/status': typeof AuthenticatedStatusRoute
+  '/trace': typeof AuthenticatedTraceRoute
   '/worker': typeof AuthenticatedWorkerRoute
   '/api/chat': typeof ApiChatRoute
   '/s/$': typeof SSplatRoute
@@ -183,6 +190,7 @@ export interface FileRoutesByTo {
   '/platform': typeof AuthenticatedPlatformRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/status': typeof AuthenticatedStatusRoute
+  '/trace': typeof AuthenticatedTraceRoute
   '/worker': typeof AuthenticatedWorkerRoute
   '/api/chat': typeof ApiChatRoute
   '/s/$': typeof SSplatRoute
@@ -209,6 +217,7 @@ export interface FileRoutesById {
   '/_authenticated/platform': typeof AuthenticatedPlatformRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/status': typeof AuthenticatedStatusRoute
+  '/_authenticated/trace': typeof AuthenticatedTraceRoute
   '/_authenticated/worker': typeof AuthenticatedWorkerRoute
   '/api/chat': typeof ApiChatRoute
   '/s/$': typeof SSplatRoute
@@ -235,6 +244,7 @@ export interface FileRouteTypes {
     | '/platform'
     | '/settings'
     | '/status'
+    | '/trace'
     | '/worker'
     | '/api/chat'
     | '/s/$'
@@ -259,6 +269,7 @@ export interface FileRouteTypes {
     | '/platform'
     | '/settings'
     | '/status'
+    | '/trace'
     | '/worker'
     | '/api/chat'
     | '/s/$'
@@ -284,6 +295,7 @@ export interface FileRouteTypes {
     | '/_authenticated/platform'
     | '/_authenticated/settings'
     | '/_authenticated/status'
+    | '/_authenticated/trace'
     | '/_authenticated/worker'
     | '/api/chat'
     | '/s/$'
@@ -388,6 +400,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedStatusRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/trace': {
+      id: '/_authenticated/trace'
+      path: '/trace'
+      fullPath: '/trace'
+      preLoaderRoute: typeof AuthenticatedTraceRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/worker': {
       id: '/_authenticated/worker'
       path: '/worker'
@@ -490,6 +509,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedPlatformRoute: typeof AuthenticatedPlatformRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedStatusRoute: typeof AuthenticatedStatusRoute
+  AuthenticatedTraceRoute: typeof AuthenticatedTraceRoute
   AuthenticatedWorkerRoute: typeof AuthenticatedWorkerRoute
   AuthenticatedCThreadIdRoute: typeof AuthenticatedCThreadIdRoute
 }
@@ -502,6 +522,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedPlatformRoute: AuthenticatedPlatformRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedStatusRoute: AuthenticatedStatusRoute,
+  AuthenticatedTraceRoute: AuthenticatedTraceRoute,
   AuthenticatedWorkerRoute: AuthenticatedWorkerRoute,
   AuthenticatedCThreadIdRoute: AuthenticatedCThreadIdRoute,
 }

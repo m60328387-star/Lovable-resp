@@ -10,6 +10,7 @@ import {
   PanelLeft,
   Rocket,
   ScrollText,
+  ListChecks,
   HeartPulse,
   Settings,
   ServerCog,
@@ -222,6 +223,14 @@ export function AppShell({
             activeProps={{ className: "text-primary border-primary/40" }}
           >
             <ScrollText className="size-3.5" />
+          </Link>
+          <Link
+            to="/trace"
+            aria-label="سجل تدقيق الوكيل"
+            className="grid size-8 place-items-center rounded-lg border text-muted-foreground transition-colors hover:text-foreground"
+            activeProps={{ className: "text-primary border-primary/40" }}
+          >
+            <ListChecks className="size-3.5" />
           </Link>
           <Link
             to="/status"

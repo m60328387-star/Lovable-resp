@@ -250,7 +250,7 @@ export async function runDeployHook(
 
 export async function recordDeploy(
   userId: string,
-  kind: "deploy" | "rollback" | "stage" | "stage-stop",
+  kind: "deploy" | "rollback" | "stage" | "stage-stop" | "smoke",
   result: DeployResult,
   changeId?: string | null,
   ref?: string | null,
@@ -577,5 +577,273 @@ export async function stageGateBlock(): Promise<string | null> {
   if (!stage.matchesHead) {
     return `لا توجد معاينة ناجحة للإصدار الحالي (${head.sha}). ابنِ المعاينة وافحصها أولاً، أو فعّل «تخطّي المعاينة» إن كنت متأكداً.`;
   }
+  // بوابة ثانية: اختبارات الدخان يجب أن تكون قد نجحت على نفس إصدار المعاينة.
+  const smoke = await getSmokeReport(stage.ref);
+  if (!smoke) {
+    return "لم تُنفّذ اختبارات الدخان على نسخة المعاينة بعد — شغّلها من لوحة المعاينة قبل النشر.";
+  }
+  if (!smoke.ok) {
+    const failed = smoke.checks
+      .filter((c) => !c.ok)
+      .map((c) => c.name)
+      .join("، ");
+    return `فشلت اختبارات الدخان على المعاينة (${failed}). أصلح المشكلة ثم أعد الاختبار قبل النشر.`;
+  }
   return null;
+}
+
+// ============ اختبارات الدخان على نسخة المعاينة ============
+
+export type SmokeCheck = {
+  name: string;
+  path: string;
+  status: number;
+  ok: boolean;
+  ms: number;
+  error?: string;
+};
+
+export type SmokeReport = {
+  ok: boolean;
+  ref: string | null;
+  url: string | null;
+  at: string | null;
+  checks: SmokeCheck[];
+};
+
+const SMOKE_CHECKS: Array<{
+  name: string;
+  path: string;
+  expect: (s: number, b: string) => boolean;
+}> = [
+  {
+    name: "الصفحة العامة",
+    path: "/",
+    expect: (status, body) => status === 200 && /<html/i.test(body),
+  },
+  {
+    name: "صفحة الدخول",
+    path: "/auth",
+    expect: (status) => status === 200,
+  },
+  {
+    name: "فحص الصحة",
+    path: "/api/public/health",
+    expect: (status, body) => status < 500 && /"db"\s*:\s*true/.test(body),
+  },
+  {
+    name: "الأصول الثابتة",
+    path: "/robots.txt",
+    expect: (status) => status === 200,
+  },
+];
+
+/** ينفّذ اختبارات دخانية سريعة على نسخة المعاينة ويسجّل النتيجة. */
+export async function runStageSmoke(
+  ref: string | null,
+  userId?: string | null,
+): Promise<SmokeReport> {
+  await ensurePlatformTables();
+  const url = stagePublicUrl();
+  if (!url) {
+    return {
+      ok: false,
+      ref,
+      url: null,
+      at: new Date().toISOString(),
+      checks: [
+        {
+          name: "رابط المعاينة",
+          path: "-",
+          status: 0,
+          ok: false,
+          ms: 0,
+          error: "اضبط PLATFORM_STAGE_URL أو WEAVER_SERVER_IP",
+        },
+      ],
+    };
+  }
+
+  const checks: SmokeCheck[] = [];
+  for (const check of SMOKE_CHECKS) {
+    const started = Date.now();
+    try {
+      const res = await fetch(`${url}${check.path}`, {
+        signal: AbortSignal.timeout(12_000),
+        headers: { "cache-control": "no-cache" },
+      });
+      const body = (await res.text()).slice(0, 4000);
+      checks.push({
+        name: check.name,
+        path: check.path,
+        status: res.status,
+        ok: check.expect(res.status, body),
+        ms: Date.now() - started,
+      });
+    } catch (error) {
+      checks.push({
+        name: check.name,
+        path: check.path,
+        status: 0,
+        ok: false,
+        ms: Date.now() - started,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  const report: SmokeReport = {
+    ok: checks.every((c) => c.ok),
+    ref,
+    url,
+    at: new Date().toISOString(),
+    checks,
+  };
+
+  const sql = getSql();
+  await sql`
+    INSERT INTO public.platform_deploys (user_id, status, kind, log, finished_at, ref)
+    VALUES (${userId ?? null}, ${report.ok ? "success" : "failed"}, 'smoke',
+            ${JSON.stringify(report)}, now(), ${ref})
+  `;
+  return report;
+}
+
+/** آخر تقرير دخان مسجّل (لإصدار معيّن إن حُدّد). */
+export async function getSmokeReport(ref?: string | null): Promise<SmokeReport | null> {
+  await ensurePlatformTables();
+  const sql = getSql();
+  const rows = ref
+    ? await sql`
+        SELECT log, ref, created_at FROM public.platform_deploys
+        WHERE kind = 'smoke' AND ref = ${ref} ORDER BY created_at DESC LIMIT 1
+      `
+    : await sql`
+        SELECT log, ref, created_at FROM public.platform_deploys
+        WHERE kind = 'smoke' ORDER BY created_at DESC LIMIT 1
+      `;
+  const row = rows[0];
+  if (!row) return null;
+  try {
+    const parsed = JSON.parse(String(row["log"] ?? "{}")) as SmokeReport;
+    return { ...parsed, at: parsed.at ?? String(row["created_at"]) };
+  } catch {
+    return null;
+  }
+}
+
+// ============ مقارنة المعاينة بالإنتاج ============
+
+/** الإصدار الجاري فعلياً على الإنتاج (آخر نشر ناجح مسجّل). */
+export async function getProductionRef(): Promise<string | null> {
+  await ensurePlatformTables();
+  const sql = getSql();
+  const rows = await sql`
+    SELECT ref FROM public.platform_deploys
+    WHERE kind = 'deploy' AND status = 'success' AND ref IS NOT NULL
+    ORDER BY created_at DESC LIMIT 1
+  `;
+  return rows[0]?.["ref"] ? String(rows[0]["ref"]) : null;
+}
+
+export type StageDiffFile = {
+  path: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  patch: string;
+};
+
+export type StageDiff = {
+  available: boolean;
+  reason?: string;
+  base: string | null;
+  head: string | null;
+  aheadBy: number;
+  behindBy: number;
+  files: StageDiffFile[];
+};
+
+/** مقارنة ملفّية بين ما يعمل على الإنتاج وما هو مبنيّ في المعاينة. */
+export async function getStageProductionDiff(): Promise<StageDiff> {
+  const repo = process.env["GITHUB_REPO_URL"];
+  const token = process.env["GITHUB_TOKEN"];
+  const empty: StageDiff = {
+    available: false,
+    base: null,
+    head: null,
+    aheadBy: 0,
+    behindBy: 0,
+    files: [],
+  };
+  if (!repo || !token) return { ...empty, reason: "مستودع المنصة غير مضبوط" };
+
+  const headInfo = await getGithubHead();
+  const stage = await getStageState(headInfo.sha ?? null);
+  const stageRef = stage.ref ?? headInfo.sha ?? null;
+  const prodRef = await getProductionRef();
+  if (!stageRef) return { ...empty, reason: "لا توجد معاينة مبنيّة بعد" };
+  if (!prodRef) {
+    return {
+      ...empty,
+      head: stageRef,
+      reason:
+        "لا يوجد إصدار إنتاج مسجّل بعد — ستُسجّل المقارنة تلقائياً بعد أول نشر من هذه اللوحة.",
+    };
+  }
+  if (prodRef.slice(0, 7) === stageRef.slice(0, 7)) {
+    return { available: true, base: prodRef, head: stageRef, aheadBy: 0, behindBy: 0, files: [] };
+  }
+
+  try {
+    const { parseRepo, gh } = await import("@/lib/github.server");
+    const { owner, repo: name } = parseRepo(repo);
+    const res = await gh(token, `/repos/${owner}/${name}/compare/${prodRef}...${stageRef}`);
+    if (!res.ok) throw new Error(`GitHub ${res.status}`);
+    const data = (await res.json()) as {
+      ahead_by?: number;
+      behind_by?: number;
+      files?: Array<{
+        filename?: string;
+        status?: string;
+        additions?: number;
+        deletions?: number;
+        patch?: string;
+      }>;
+    };
+    return {
+      available: true,
+      base: prodRef,
+      head: stageRef,
+      aheadBy: Number(data.ahead_by ?? 0),
+      behindBy: Number(data.behind_by ?? 0),
+      files: (data.files ?? []).slice(0, 60).map((f) => ({
+        path: String(f.filename ?? ""),
+        status: String(f.status ?? "modified"),
+        additions: Number(f.additions ?? 0),
+        deletions: Number(f.deletions ?? 0),
+        patch: String(f.patch ?? "").slice(0, 12_000),
+      })),
+    };
+  } catch (error) {
+    return {
+      ...empty,
+      base: prodRef,
+      head: stageRef,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/** آخر إصدار إنتاج مستقر سابق (هدف زر التراجع). */
+export async function getLastStableRef(): Promise<string | null> {
+  await ensurePlatformTables();
+  const sql = getSql();
+  const rows = await sql`
+    SELECT ref FROM public.platform_deploys
+    WHERE kind = 'deploy' AND status = 'success' AND ref IS NOT NULL
+    ORDER BY created_at DESC LIMIT 2
+  `;
+  const previous = rows[1]?.["ref"];
+  return previous ? String(previous) : null;
 }

@@ -17,6 +17,10 @@ import {
   Save,
   Search,
   Settings2,
+  ShieldCheck,
+  GitCompare,
+  CheckCircle2,
+  XCircle,
   Undo2,
   X,
 } from "lucide-react";
@@ -29,6 +33,9 @@ import {
   exportBackup,
   getDeployStatus,
   getStagePreview,
+  getStageDiff,
+  runSmokeTests,
+  rollbackToStable,
   stagePlatform,
   listPlatformErrors,
   restoreBackup,
@@ -541,6 +548,231 @@ function StagePreviewCard() {
   );
 }
 
+function SmokeTestsCard() {
+  const queryClient = useQueryClient();
+  const preview = useQuery({
+    queryKey: ["stage-preview"],
+    queryFn: () => getStagePreview(),
+    refetchInterval: (query) => (query.state.data?.stage.status === "running" ? 5_000 : 20_000),
+  });
+  const smoke = preview.data?.smoke ?? null;
+  const run = useMutation({
+    mutationFn: () => runSmokeTests(),
+    onSuccess: (report) => {
+      if (report.ok) toast.success("نجحت اختبارات الدخان على المعاينة");
+      else toast.error("فشلت بعض اختبارات الدخان — راجع النتائج");
+      void queryClient.invalidateQueries({ queryKey: ["stage-preview"] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "تعذّر الاختبار"),
+  });
+
+  return (
+    <div className="rounded-2xl border bg-card p-4 shadow-soft">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="flex items-center gap-2 text-[15px] font-bold">
+          <ShieldCheck className="size-4" /> اختبارات الدخان على المعاينة
+        </h2>
+        <button
+          type="button"
+          disabled={run.isPending}
+          onClick={() => run.mutate()}
+          className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[12.5px] font-semibold hover:bg-accent disabled:opacity-50"
+        >
+          {run.isPending ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <PlayCircle className="size-3.5" />
+          )}
+          إعادة الاختبار
+        </button>
+      </div>
+      <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
+        تُنفَّذ تلقائياً فور اكتمال بناء المعاينة، ولا يُسمح بالتبديل إلى الإنتاج قبل نجاحها كلها.
+      </p>
+
+      {!smoke ? (
+        <p className="mt-3 text-[12.5px] text-muted-foreground">
+          لا توجد نتائج بعد — ابنِ المعاينة أولاً.
+        </p>
+      ) : (
+        <>
+          <div className="mt-3 space-y-1.5">
+            {smoke.checks.map((check) => (
+              <div
+                key={check.path + check.name}
+                className={cn(
+                  "flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-[12.5px]",
+                  check.ok
+                    ? "border-emerald-500/30 bg-emerald-500/5"
+                    : "border-rose-500/30 bg-rose-500/5",
+                )}
+              >
+                {check.ok ? (
+                  <CheckCircle2 className="size-3.5 text-emerald-600" />
+                ) : (
+                  <XCircle className="size-3.5 text-rose-600" />
+                )}
+                <span className="font-semibold">{check.name}</span>
+                <span className="font-mono text-[11px] text-muted-foreground" dir="ltr">
+                  {check.path} · HTTP {check.status} · {check.ms}ms
+                </span>
+                {check.error ? (
+                  <span className="text-[11px] text-rose-600" dir="ltr">
+                    {check.error}
+                  </span>
+                ) : null}
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            آخر تشغيل: {smoke.at ? new Date(smoke.at).toLocaleString("ar") : "—"} — الإصدار:{" "}
+            <span className="font-mono" dir="ltr">
+              {smoke.ref?.slice(0, 12) ?? "—"}
+            </span>
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function StageDiffCard() {
+  const diff = useQuery({ queryKey: ["stage-diff"], queryFn: () => getStageDiff() });
+  const [open, setOpen] = useState<string | null>(null);
+  const data = diff.data;
+
+  return (
+    <div className="rounded-2xl border bg-card p-4 shadow-soft">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="flex items-center gap-2 text-[15px] font-bold">
+          <GitCompare className="size-4" /> المعاينة مقابل الإنتاج
+        </h2>
+        <button
+          type="button"
+          onClick={() => void diff.refetch()}
+          className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[12.5px] font-semibold hover:bg-accent"
+        >
+          <RefreshCw className={cn("size-3.5", diff.isFetching && "animate-spin")} /> تحديث
+        </button>
+      </div>
+
+      {diff.isPending ? (
+        <p className="mt-2 text-[12.5px] text-muted-foreground">جارٍ الحساب…</p>
+      ) : !data?.available ? (
+        <p className="mt-2 text-[12.5px] text-muted-foreground">{data?.reason ?? "غير متاح"}</p>
+      ) : (
+        <>
+          <p className="mt-2 text-[12.5px] text-muted-foreground" dir="ltr">
+            {data.base?.slice(0, 7)} → {data.head?.slice(0, 7)} · +{data.aheadBy} commits ·{" "}
+            {data.files.length} ملف
+          </p>
+          {data.files.length === 0 ? (
+            <p className="mt-2 text-[12.5px] text-emerald-700">
+              لا فرق — المعاينة مطابقة تماماً لما يعمل على الإنتاج.
+            </p>
+          ) : (
+            <div className="mt-3 space-y-1.5">
+              {data.files.map((file) => (
+                <div key={file.path} className="rounded-lg border">
+                  <button
+                    type="button"
+                    onClick={() => setOpen(open === file.path ? null : file.path)}
+                    className="flex w-full flex-wrap items-center gap-2 px-3 py-2 text-right text-[12px] hover:bg-accent"
+                  >
+                    <span className="rounded bg-muted px-1.5 py-0.5 text-[10.5px] font-semibold">
+                      {file.status}
+                    </span>
+                    <span className="font-mono" dir="ltr">
+                      {file.path}
+                    </span>
+                    <span className="ms-auto font-mono text-[11px]" dir="ltr">
+                      <span className="text-emerald-600">+{file.additions}</span>{" "}
+                      <span className="text-rose-600">-{file.deletions}</span>
+                    </span>
+                  </button>
+                  {open === file.path && file.patch ? (
+                    <pre
+                      className="max-h-72 overflow-auto border-t bg-muted/40 p-2 font-mono text-[11px]"
+                      dir="ltr"
+                    >
+                      {file.patch}
+                    </pre>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function SafeRollbackCard() {
+  const queryClient = useQueryClient();
+  const [armed, setArmed] = useState(false);
+  const rollback = useMutation({
+    mutationFn: () => rollbackToStable({ data: { confirm: true, confirmAgain: true } }),
+    onSuccess: (result) => {
+      setArmed(false);
+      if (result.ok)
+        toast.success(`بدأ التراجع إلى ${result.target?.slice(0, 7) ?? "الإصدار السابق"}`);
+      else toast.error(result.log);
+      void queryClient.invalidateQueries({ queryKey: ["platform-deploys"] });
+      void queryClient.invalidateQueries({ queryKey: ["deploy-status"] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "تعذّر التراجع"),
+  });
+
+  return (
+    <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
+      <h2 className="flex items-center gap-2 text-[15px] font-bold">
+        <Undo2 className="size-4" /> تراجع آمن إلى آخر إنتاج مستقر
+      </h2>
+      <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
+        يعيد الخادم إلى آخر إصدار نُشر بنجاح، ثم يتحقّق من صحته. يتطلّب تأكيدين متتاليين.
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {!armed ? (
+          <button
+            type="button"
+            onClick={() => setArmed(true)}
+            className="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-[13px] font-semibold hover:bg-accent"
+          >
+            <Undo2 className="size-4" /> تجهيز التراجع
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              disabled={rollback.isPending}
+              onClick={() => {
+                if (!window.confirm("تأكيد نهائي: إرجاع الإنتاج إلى آخر إصدار مستقر؟")) return;
+                rollback.mutate();
+              }}
+              className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50"
+            >
+              {rollback.isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <AlertTriangle className="size-4" />
+              )}
+              تأكيد التراجع الآن
+            </button>
+            <button
+              type="button"
+              onClick={() => setArmed(false)}
+              className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-[13px] font-semibold hover:bg-accent"
+            >
+              <X className="size-4" /> إلغاء
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function DeployTab() {
   const queryClient = useQueryClient();
   const status = useQuery({
@@ -722,6 +954,9 @@ function DeployTab() {
       </div>
 
       <StagePreviewCard />
+      <SmokeTestsCard />
+      <StageDiffCard />
+      <SafeRollbackCard />
 
       <div className="space-y-2">
         {(deploys.data ?? []).map((d) => (

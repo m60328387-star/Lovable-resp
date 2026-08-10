@@ -186,3 +186,108 @@ export const getWorkerMetrics = createServerFn({ method: "GET" })
       })),
     };
   });
+
+export type TraceStep = {
+  id: string;
+  jobId: string;
+  projectId: string | null;
+  category: "read" | "write" | "exec" | "verify" | "deploy" | "other";
+  kind: string;
+  label: string;
+  detail: string | null;
+  ok: boolean | null;
+  durationMs: number | null;
+  attempt: number;
+  at: string;
+};
+
+const CATEGORY_RULES: Array<[RegExp, TraceStep["category"]]> = [
+  [/(read|list|recall|search|fetch|browse|screenshot|page_text)/i, "read"],
+  [/(write|edit|patch|delete|rename|save|image|brand|kit)/i, "write"],
+  [/(run_command|shell|npm|dev_server|install|build|runtime|exec)/i, "exec"],
+  [/(verify|check|audit|test|critic|lint|repair|fix)/i, "verify"],
+  [/(deploy|publish|stage|domain|rollback)/i, "deploy"],
+];
+
+function categorize(label: string, kind: string): TraceStep["category"] {
+  const target = `${label} ${kind}`;
+  for (const [pattern, category] of CATEGORY_RULES) if (pattern.test(target)) return category;
+  return "other";
+}
+
+/**
+ * سجل تدقيق تفصيلي لخطوات الوكيل (قراءة/كتابة/تنفيذ/تحقق) مع الزمن والحالة،
+ * ومؤشّر توقف فور أول خطوة فاشلة في المهمة الجارية.
+ */
+export const getAgentTrace = createServerFn({ method: "POST" })
+  .middleware([requireWeaverAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        jobId: z.string().uuid().nullable().optional(),
+        projectId: z.string().uuid().nullable().optional(),
+        onlyFailures: z.boolean().optional(),
+        search: z.string().max(120).optional(),
+        limit: z.number().int().min(20).max(300).optional(),
+      })
+      .parse(input ?? {}),
+  )
+  .handler(async ({ data, context }) => {
+    await ensureAgentJobs();
+    const sql = getSql();
+    const limit = data.limit ?? 120;
+    const search = (data.search ?? "").trim();
+
+    const jobRows = await sql`
+      SELECT * FROM public.agent_jobs
+      WHERE user_id = ${context.userId}
+        AND (${data.projectId ?? null}::uuid IS NULL OR project_id = ${data.projectId ?? null})
+      ORDER BY created_at DESC LIMIT 12
+    `;
+    const jobs = (jobRows as unknown as Record<string, unknown>[]).map(mapJob);
+    const focusJob =
+      data.jobId ?? jobs.find((j) => j.status === "running")?.id ?? jobs[0]?.id ?? null;
+
+    let steps: TraceStep[] = [];
+    if (focusJob) {
+      const rows = await sql`
+        SELECT e.id, e.job_id, j.project_id, e.kind, e.label, e.detail, e.ok,
+               e.duration_ms, e.attempt, e.created_at
+        FROM public.agent_job_events e
+        JOIN public.agent_jobs j ON j.id = e.job_id
+        WHERE e.job_id = ${focusJob} AND j.user_id = ${context.userId}
+          AND (${data.onlyFailures ? true : false} = false OR e.ok = false)
+          AND (${search} = '' OR e.label ILIKE ${"%" + search + "%"} OR COALESCE(e.detail,'') ILIKE ${"%" + search + "%"})
+        ORDER BY e.created_at ASC
+        LIMIT ${limit}
+      `;
+      steps = (rows as unknown as Record<string, unknown>[]).map((r) => ({
+        id: String(r["id"]),
+        jobId: String(r["job_id"]),
+        projectId: (r["project_id"] as string | null) ?? null,
+        category: categorize(String(r["label"] ?? ""), String(r["kind"] ?? "")),
+        kind: String(r["kind"] ?? ""),
+        label: String(r["label"] ?? ""),
+        detail: (r["detail"] as string | null) ?? null,
+        ok: (r["ok"] as boolean | null) ?? null,
+        durationMs: (r["duration_ms"] as number | null) ?? null,
+        attempt: Number(r["attempt"] ?? 1),
+        at: String(r["created_at"]),
+      }));
+    }
+
+    const firstFailure = steps.find((s) => s.ok === false) ?? null;
+    const job = jobs.find((j) => j.id === focusJob) ?? null;
+    return {
+      jobs,
+      job,
+      steps,
+      firstFailure,
+      halted: Boolean(firstFailure) || job?.status === "error",
+      totals: {
+        steps: steps.length,
+        failed: steps.filter((s) => s.ok === false).length,
+        totalMs: steps.reduce((sum, s) => sum + (s.durationMs ?? 0), 0),
+      },
+    };
+  });
