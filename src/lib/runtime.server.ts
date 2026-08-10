@@ -25,7 +25,7 @@ async function call<T>(
   timeoutMs = 320_000,
 ): Promise<T> {
   if (!runtimeConfigured()) {
-    throw new Error("بيئة التنفيذ غير مهيّأة على هذا الخادم (EXECUTOR_TOKEN مفقود).");
+    throw new Error("بيئة التنفيذ غير مهيّأة على هذا الخادم (EXECUTOR_TOKEN مفقود أو قصير أو بقيمة افتراضية).");
   }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
