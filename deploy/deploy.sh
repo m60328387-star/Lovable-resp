@@ -142,9 +142,11 @@ $SSH "$SERVER" '
   chmod +x deploy/db/backup.sh deploy/db/restore.sh 2>/dev/null || true
   cd /opt/weaver/deploy
   docker compose up -d --build
+  # init-ssl.sh يكتب إعداد nginx عند بدء الحاوية؛ أعد إنشاءها دائماً لالتقاط أي تعديل.
+  docker compose up -d --force-recreate nginx
   # ترحيلات إضافية idempotent على قاعدة بيانات قائمة (سكربتات init تعمل مرة واحدة فقط)
   for i in $(seq 1 30); do docker compose exec -T db pg_isready -U weaver && break; sleep 2; done
-  for f in db/init/03-agent-jobs.sql db/init/04-audit-connectors.sql db/init/05-project-columns.sql; do
+  for f in db/init/03-agent-jobs.sql db/init/04-audit-connectors.sql db/init/05-project-columns.sql db/init/06-message-integrity.sql; do
     [ -f "$f" ] && docker compose exec -T db psql -U weaver -d weaver -v ON_ERROR_STOP=1 < "$f"
   done
 '
@@ -212,6 +214,16 @@ VERIFY_OUTPUT="$($SSH "$SERVER" '
   if grep -qi "Missing Supabase environment" /tmp/auth.html; then
     echo "ENV_ALERT: VITE_SUPABASE_* missing in client bundle"
     ok=0
+  fi
+
+  runtime_proxy=$(curl -sS -o /tmp/runtime-probe.html -w "%{http_code}" \
+    "http://127.0.0.1:$PORT/api/public/rt/deploy-probe/" || true)
+  echo "RUNTIME_PROXY_STATUS: $runtime_proxy"
+  if [ "$runtime_proxy" != "200" ] || ! grep -q "لا توجد ملفات في مساحة العمل بعد" /tmp/runtime-probe.html; then
+    echo "RUNTIME_PROXY: unavailable"
+    ok=0
+  else
+    echo "RUNTIME_PROXY: ready"
   fi
 
   logs=$(docker compose logs --tail 200 app worker 2>/dev/null || true)

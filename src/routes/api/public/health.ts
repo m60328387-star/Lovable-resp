@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { bearerToken, secretEquals } from "@/lib/token-compare";
 import { getSql } from "@/lib/db";
+import { runtimeConfigured, runtimeHealthy } from "@/lib/runtime.server";
 
 /**
  * فحص صحة عام للحاويات ولخطوة التحقق بعد النشر:
@@ -66,9 +67,10 @@ export const Route = createFileRoute("/api/public/health")({
         if (noProvider) missing.push("MODEL_PROVIDER(none_configured)");
 
         // قدرات اختيارية: أدوات تعمل فقط عند توفّر مفاتيحها (تظهر هنا بدل أن تفشل صامتة).
+        const runtime = runtimeConfigured() && (await runtimeHealthy());
         const capabilities = {
           executor: Boolean((process.env["EXECUTOR_TOKEN"] ?? "").trim()),
-          runtime: Boolean((process.env["RUNTIME_URL"] ?? "").trim()),
+          runtime,
           selfRepo: Boolean(
             (process.env["GITHUB_TOKEN"] ?? "").trim() &&
             (process.env["GITHUB_REPO_URL"] ?? "").trim(),
@@ -81,7 +83,9 @@ export const Route = createFileRoute("/api/public/health")({
           .filter(([, on]) => !on)
           .map(([name]) => name);
 
-        const ok = db && missing.length === 0;
+        // runtime ليس إضافة اختيارية في Weaver: من دونه لا npm ولا build ولا preview.
+        if (!runtime) missing.push("RUNTIME(unreachable)");
+        const ok = db && runtime && missing.length === 0;
         if (!ok) {
           try {
             const { alertOnCriticalEnv } = await import("@/lib/alerts.server");

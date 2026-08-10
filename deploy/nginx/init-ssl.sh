@@ -26,6 +26,7 @@ http {
     gzip_types text/plain text/css text/xml text/javascript application/json application/javascript application/xml+rss;
 
     upstream app { server app:3000; }
+    upstream runtime { server runtime:4100; }
 
     server {
         listen 80;
@@ -66,6 +67,18 @@ EOF
 
 proxy_block() {
   cat <<'EOF'
+        # المعاينة الحيّة يجب أن تصل مباشرة إلى حاوية runtime.
+        # وضع هذا المسار قبل location / يمنع تمريره إلى التطبيق ثم فشل fetch الداخلي.
+        location ^~ /api/public/rt/ {
+            proxy_pass http://runtime/p/;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Host $http_host;
+            proxy_read_timeout 86400;
+            proxy_buffering off;
+        }
+
         location / {
             proxy_pass http://app;
             proxy_http_version 1.1;

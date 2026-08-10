@@ -10,7 +10,7 @@ RUN npm install --omit=dev --no-audit --no-fund \
   && npx playwright install --with-deps chromium \
   && rm -rf /root/.npm
 
-COPY server.mjs browser.mjs ./
+COPY server.mjs browser.mjs agent-browser.mjs ./
 
 ENV RUNTIME_ROOT=/workspaces
 ENV RUNTIME_PORT=4100

@@ -116,6 +116,8 @@ CREATE TABLE IF NOT EXISTS public.messages (
 );
 
 CREATE INDEX IF NOT EXISTS messages_project_id_idx ON public.messages(project_id);
+CREATE UNIQUE INDEX IF NOT EXISTS messages_project_position_unique
+  ON public.messages(project_id, position);
 
 -- -------------------------------------------------
 -- Runs

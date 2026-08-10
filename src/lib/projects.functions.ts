@@ -120,10 +120,10 @@ export const getConversation = createServerFn({ method: "POST" })
     const sql = getSql();
     const [messagesRows, projectRows, tasksRows, specRows] = await Promise.all([
       sql`
-        SELECT parts
+        SELECT DISTINCT ON (position) parts
         FROM public.messages
         WHERE project_id = ${data.projectId}
-        ORDER BY position ASC
+        ORDER BY position ASC, created_at DESC, id DESC
       `,
       sql`
         SELECT id, title, status, build_progress, next_action, deployed_url
@@ -188,21 +188,29 @@ export const saveConversation = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const sql = getSql();
-    const existing = await sql`
-      SELECT count(*)::int AS count
-      FROM public.messages
-      WHERE project_id = ${data.projectId}
-    `;
-    const existingCount = (existing[0] as unknown as { count: number }).count ?? 0;
-
-    if (data.messages.length === 0 || existingCount > data.messages.length) {
+    if (data.messages.length === 0) {
       return { ok: true, skipped: true };
     }
 
-    // Atomic rewrite: concurrent autosaves previously interleaved their
-    // DELETE/INSERT and left duplicated rows at the same position.
+    // Serialize saves per project. A transaction alone does not stop two
+    // concurrent autosaves from deleting/inserting the same positions.
     await sql.begin(async (tx) => {
-      await tx`DELETE FROM public.messages WHERE project_id = ${data.projectId}`;
+      await tx`SELECT pg_advisory_xact_lock(hashtextextended(${data.projectId}, 0))`;
+      const project = await tx`
+        SELECT id FROM public.projects
+        WHERE id = ${data.projectId} AND user_id = ${context.userId}
+        FOR UPDATE
+      `;
+      if (project.length === 0) throw new Error("المشروع غير موجود أو لا تملك صلاحية تعديله.");
+
+      const existing = await tx`
+        SELECT count(DISTINCT position)::int AS count
+        FROM public.messages
+        WHERE project_id = ${data.projectId}
+      `;
+      const existingCount = (existing[0] as unknown as { count: number }).count ?? 0;
+      if (existingCount > data.messages.length) return;
+
       for (const [index, message] of data.messages.entries()) {
         await tx`
           INSERT INTO public.messages (project_id, user_id, role, parts, position)
@@ -213,8 +221,16 @@ export const saveConversation = createServerFn({ method: "POST" })
             ${tx.json(message as never)},
             ${index}
           )
+          ON CONFLICT (project_id, position) DO UPDATE SET
+            user_id = EXCLUDED.user_id,
+            role = EXCLUDED.role,
+            parts = EXCLUDED.parts
         `;
       }
+      await tx`
+        DELETE FROM public.messages
+        WHERE project_id = ${data.projectId} AND position >= ${data.messages.length}
+      `;
     });
 
     await sql`

@@ -147,6 +147,9 @@ if [ "$build_rc" -ne 0 ]; then
   echo "DEPLOY: FAIL"
   exit 1
 fi
+# nginx يولّد ملفه النهائي عند بدء الحاوية من init-ssl.sh. تغيّر السكربت المركّب
+# لا يعيد تشغيل حاوية nginx تلقائياً، لذا يجب إعادة إنشائها لتفعيل مسارات المعاينة الجديدة.
+docker compose up -d --force-recreate nginx
 echo "BUILD: OK"
 
 for i in $(seq 1 30); do docker compose exec -T db pg_isready -U weaver >/dev/null 2>&1 && break; sleep 2; done
@@ -178,6 +181,19 @@ case "${rt:-}" in
   *)
     echo "DEPLOY: FAIL (runtime unavailable)"
     docker compose logs --tail=80 runtime 2>&1 | sed -E 's/(token|secret|password|key)=?[^ ]*/\1=[REDACTED]/Ig' || true
+    exit 1
+    ;;
+esac
+
+# لا يكفي أن تجيب runtime من داخل حاويتها: اختبر المسار نفسه الذي تستخدمه الواجهة.
+preview_status=$(curl -sS -o /tmp/weaver-runtime-probe.html -w "%{http_code}" \
+  "http://127.0.0.1:$PORT/api/public/rt/deploy-probe/" || true)
+preview_body=$(cat /tmp/weaver-runtime-probe.html 2>/dev/null || true)
+echo "RUNTIME_PROXY: HTTP ${preview_status:-000}"
+case "$preview_status:$preview_body" in
+  200:*"لا توجد ملفات في مساحة العمل بعد"*) ;;
+  *)
+    echo "DEPLOY: FAIL (runtime proxy unavailable)"
     exit 1
     ;;
 esac
