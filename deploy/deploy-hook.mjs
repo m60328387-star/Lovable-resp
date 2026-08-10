@@ -23,7 +23,7 @@ const TOKEN = process.env.EXECUTOR_TOKEN || "";
 const JOB_DIR = process.env.DEPLOY_JOB_DIR || "/tmp/weaver-deploy-jobs";
 let activeJob = null;
 let activeSince = 0;
-const STALE_MS = Number(process.env.DEPLOY_JOB_STALE_MS || 20 * 60 * 1000);
+const STALE_MS = Number(process.env.DEPLOY_JOB_STALE_MS || 70 * 60 * 1000);
 
 mkdirSync(JOB_DIR, { recursive: true });
 

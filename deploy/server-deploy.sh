@@ -138,8 +138,10 @@ chmod +x "$ROOT/deploy/db/backup.sh" "$ROOT/deploy/db/restore.sh" 2>/dev/null ||
 echo "== إعادة البناء =="
 cd "$ROOT/deploy"
 # مهلة قصوى: لا نترك النشر معلّقاً للأبد إذا تأخّرت إحدى الحاويات.
+# البناء على الخادم بطيء (Nitro + runtime + worker)، لذا المهلة ساعة كاملة
+# بدل 25 دقيقة التي كانت تقطع البناء قبل نهايته وتُرجع rc=124.
 build_rc=0
-timeout 1500 docker compose up -d --build || build_rc=$?
+timeout 3600 docker compose up -d --build || build_rc=$?
 if [ "$build_rc" -ne 0 ]; then
   echo "BUILD: FAIL (rc=$build_rc)"
   echo "== تراجع تلقائي إلى الإصدار السابق =="
