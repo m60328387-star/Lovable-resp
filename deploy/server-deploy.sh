@@ -188,7 +188,6 @@ case "${rt:-}" in
 esac
 
 # لا يكفي أن تجيب runtime من داخل حاويتها: اختبر المسار نفسه الذي تستخدمه الواجهة.
-# لا يكفي أن تجيب runtime من داخل حاويتها: اختبر المسار نفسه الذي تستخدمه الواجهة.
 # أي رد HTTP سليم (200/404) يعني أن السلسلة تعمل؛ الفشل الحقيقي هو 000/502/503.
 preview_status=$(curl -sS -o /tmp/weaver-runtime-probe.html -w "%{http_code}" \
   "http://127.0.0.1:$PORT/api/public/rt/deploy-probe/" || true)
