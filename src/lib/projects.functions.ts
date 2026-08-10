@@ -21,7 +21,7 @@ export const listProjects = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const sql = getSql();
     const rows = await sql`
-      SELECT id, title, status, updated_at
+      SELECT id, title, status, build_progress, next_action, deployed_url, updated_at
       FROM public.projects
       WHERE user_id = ${context.userId}
       ORDER BY updated_at DESC
@@ -30,6 +30,9 @@ export const listProjects = createServerFn({ method: "GET" })
       id: string;
       title: string;
       status: string;
+      build_progress: number;
+      next_action: string | null;
+      deployed_url: string | null;
       updated_at: string;
     }>;
   });
@@ -41,11 +44,23 @@ export const createProject = createServerFn({ method: "POST" })
     await ensureProfile(context.userId, context.owner.email);
     const sql = getSql();
     const [row] = await sql`
-      INSERT INTO public.projects (user_id, title)
-      VALUES (${context.userId}, ${data.title})
-      RETURNING id, title, status, updated_at
+      INSERT INTO public.projects (user_id, title, build_state)
+      VALUES (
+        ${context.userId},
+        ${data.title},
+        ${sql.json({ phase: "intake", completedSteps: [], updatedAt: new Date().toISOString() } as never)}
+      )
+      RETURNING id, title, status, build_progress, next_action, deployed_url, updated_at
     `;
-    return row as unknown as { id: string; title: string; status: string; updated_at: string };
+    return row as unknown as {
+      id: string;
+      title: string;
+      status: string;
+      build_progress: number;
+      next_action: string | null;
+      deployed_url: string | null;
+      updated_at: string;
+    };
   });
 
 export const renameProject = createServerFn({ method: "POST" })
@@ -76,7 +91,7 @@ export const deleteProject = createServerFn({ method: "POST" })
   });
 
 export type ConversationResult = {
-  project: { id: string; title: string; status: string } | null;
+  project: { id: string; title: string; status: string; buildProgress: number; nextAction: string | null; deployedUrl: string | null } | null;
   messages: Json[];
   tasks: Array<{
     task_key: string;
@@ -104,7 +119,7 @@ export const getConversation = createServerFn({ method: "POST" })
         ORDER BY position ASC
       `,
       sql`
-        SELECT id, title, status
+        SELECT id, title, status, build_progress, next_action, deployed_url
         FROM public.projects
         WHERE id = ${data.projectId} AND user_id = ${context.userId}
       `,
@@ -123,9 +138,26 @@ export const getConversation = createServerFn({ method: "POST" })
       `,
     ]);
 
+    const projectRow = (projectRows as unknown as Array<{
+      id: string;
+      title: string;
+      status: string;
+      build_progress: number;
+      next_action: string | null;
+      deployed_url: string | null;
+    }>)[0];
+
     return {
-      project:
-        (projectRows as unknown as Array<{ id: string; title: string; status: string }>)[0] ?? null,
+      project: projectRow
+        ? {
+            id: projectRow.id,
+            title: projectRow.title,
+            status: projectRow.status,
+            buildProgress: projectRow.build_progress,
+            nextAction: projectRow.next_action,
+            deployedUrl: projectRow.deployed_url,
+          }
+        : null,
       messages: (messagesRows as unknown as Array<{ parts: Json }>).map((row) =>
         // Legacy rows were written double-encoded (a JSON string inside jsonb).
         typeof row.parts === "string" ? (JSON.parse(row.parts) as Json) : row.parts,

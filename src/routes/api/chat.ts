@@ -12,6 +12,7 @@ import { createOpenRouterProvider, getOpenRouterModelId } from "@/lib/openrouter
 import { resolveBuildModel, noteOpenRouterUnavailable } from "@/lib/build-provider.server";
 import { authenticateRequest, type AuthedContext } from "@/lib/chat-auth.server";
 import type { Json } from "@/integrations/supabase/types";
+import { reconcileProjectState, saveBuildState, setDeployedUrl, type BuildPhase, type NextAction } from "@/lib/build-state.server";
 
 import { runChecks, type Issue } from "@/lib/verify.server";
 import { estimateCostUsd } from "@/lib/pricing";
@@ -23,8 +24,18 @@ import {
   targetInsert,
   projectSchema,
 } from "@/lib/target-supabase.server";
-import { getSelfRepo, selfList, selfRead, selfWrite } from "@/lib/self-repo.server";
+import {
+  getSelfRepo,
+  selfEdit,
+  selfList,
+  selfMap,
+  selfRead,
+  selfSearch,
+  selfWrite,
+} from "@/lib/self-repo.server";
 import { DESIGN_KIT } from "@/lib/design-kit";
+import { DESIGN_LIBRARY } from "@/lib/design-library";
+import { STACK_LIBRARY, buildStackPlan, type StackKind } from "@/lib/stack-library";
 import { skillPrompt } from "@/lib/skills";
 import { modePrompt } from "@/lib/modes";
 import { webSearch, webFetch } from "@/lib/web.server";
@@ -223,6 +234,17 @@ const SYSTEM_PROMPT = `أنت "Weaver" — وكيل هندسي (Engineering Agen
 - التخزين/الخلفية عند الحاجة: Supabase JS من CDN مع مفتاح publishable فقط، أو أدوات db_sql/db_select/db_insert لمساحة المشروع.
 قواعد المكتبات: استخدم روابط CDN ثابتة الإصدار، لا تُحمّل مكتبة بلا استخدام فعلي، ولا تتجاوز 6 مكتبات في الصفحة الواحدة، وتأكد أن كل مكتبة مُهيّأة فعلاً (init) في script.js.
 
+الأداء بمعايير enterprise (إلزامي — يُفحص قبل النشر):
+- الحد الأقصى للاعتماديات الخارجية في الموقع البسيط/التعريفي: **صفر إلى واحدة**. لا تضف مكتبة إلا إذا كان بديلها الأصلي يتطلب أكثر من ~60 سطر كود.
+- بدائل أصلية إلزامية بدل المكتبات: IntersectionObserver بدل AOS، وanimation/transition في CSS بدل Animate.css وGSAP للحركات البسيطة، وscroll-behavior: smooth بدل Lenis/سكربتات التمرير، وscroll-snap + CSS grid بدل Swiper للسلايدرات البسيطة، و<dialog> بدل SweetAlert2، وIntl.DateTimeFormat بدل Day.js، وSVG inline بدل حزم الأيقونات الكاملة (انسخ الأيقونات المستخدمة فقط).
+- ممنوع cdn.tailwindcss.com في أي موقع يُسلَّم أو يُنشر — فهو مُصرّف وقت تشغيل يبطئ الرسم الأول. استخدم CSS مخصصاً بالمتغيرات، واحتفظ بـ CDN Tailwind للنماذج السريعة فقط.
+- ممنوع حقن CSS ديناميكياً من JavaScript: لا document.createElement("style")، ولا innerHTML لوسم <style>، ولا insertRule، ولا كتابة قواعد أنماط داخل السكربت. كل الأنماط في ملفات .css ثابتة مرتبطة بـ <link> في <head>. تغيير الحالة يتم بإضافة/إزالة أصناف (classList) أو تعديل متغيّرات CSS عبر style.setProperty فقط.
+- ترتيب التحميل: <link rel="stylesheet"> في <head>، وكل <script> بـ defer (أو type="module")، وpreconnect للنطاقات الخارجية، وpreload لخط واحد أساسي فقط، وdisplay=swap.
+- منع القفز التخطيطي: width/height صريحان لكل صورة، وloading="lazy" و decoding="async" لما هو خارج الشاشة الأولى، وfetchpriority="high" لصورة الـ Hero فقط.
+- JS خفيف: مستمعو أحداث مفوّضون (delegation)، وdebounce/rAF لأحداث scroll وresize، وpassive: true لمستمعي scroll/touch، ولا حلقات تعمل باستمرار.
+- احترم prefers-reduced-motion، ولا تحمّل أي مكتبة حركة إذا كانت الصفحة تستخدم تأثيرين أو أقل.
+- قبل publish_site صرّح بعدد الاعتماديات الخارجية وسببها، وأكّد بـ read_file أن السكربتات لا تحتوي على أي حقن CSS ديناميكي.
+
 بناء المواقع الكبيرة والمعقّدة:
 - المواقع متعددة الصفحات مسموحة ومطلوبة: index.html + about.html + services.html + contact.html… مع هيدر وفوتر متطابقين وروابط نسبية تعمل.
 - افصل الأنماط: styles.css أساسي + ملفات مثل components.css وpages.css عند الكِبَر، واربطها كلها في <head>.
@@ -264,7 +286,10 @@ const SYSTEM_PROMPT = `أنت "Weaver" — وكيل هندسي (Engineering Agen
 
 التطوير الذاتي (تعديل منصة Weaver نفسها):
 - عندما يطلب المستخدم تعديلاً على المنصة نفسها (إضافة ميزة للواجهة، إصلاح سلوك، تغيير لون زر أو نص)، استخدم أدوات self_list_files و self_read_file و self_write_file — وليس أدوات مساحة العمل (write_file) لأنها للمشاريع المبنية فقط.
-- الترتيب الإلزامي: self_list_files لتحديد الملف → self_read_file لقراءته كاملاً → تعديل دقيق ومحدود النطاق → self_write_file للتطبيق المباشر، إلا إذا طلب المالك معاينة Diff أولاً.
+- الترتيب الإلزامي: self_map أو self_search لتحديد الملف بدقة → self_read_file لقراءته كاملاً → self_edit_file لتعديل جراحي (المفضّل) أو self_write_file عند إعادة كتابة الملف كاملاً.
+- self_edit_file هو الأداة الافتراضية للإصلاحات: أرسل مقطعاً فريداً في find مع replace؛ إن فشل بسبب تكرار أو عدم تطابق وسّع المقطع بدل تجربة عشوائية.
+- كل كتابة ذاتية تمر ببوابة تحقق (أقواس متوازنة، لا استيراد مكرر، لا محتوى مختصر)؛ إذا رُفضت أصلح المحتوى ولا تُعطّل البوابة.
+- بعد أي فشل نشر استخدم self_auto_repair لقراءة سجل الفشل واستخراج الملفات المعطوبة، ثم أصلح وأعد النشر (deploy_platform ينشر ويتحقق صحياً ويتراجع تلقائياً عند الفشل).
 - عند طلب المالك إصلاحاً أو إضافة واضحة للمنصة، نفّذها مباشرة عبر self_write_file بعد القراءة والتحقق؛ لا تتوقف لطلب مراجعة أو موافقة إضافية. استخدم propose_platform_change فقط إذا طلب المالك صراحةً معاينة Diff قبل التطبيق.
 - بعد التطبيق أكمل الفحص والنشر تلقائياً، ولا تقل «بانتظار المراجعة» ما دام الطلب الأصلي واضحاً.
 - التزم بمكدس المنصة: TanStack Start و React 19 و TypeScript و Tailwind، ولا تغيّر ملفات الأسرار أو تكاملات Supabase المولّدة، ولا تعيد كتابة ملفات كبيرة كاملة بلا داعٍ.
@@ -434,7 +459,7 @@ function extractCode(text: string) {
   return match ? match[1] : text;
 }
 
-function workspaceTools(auth: AuthedContext | null, projectId: string | null) {
+function workspaceTools(auth: AuthedContext | null, projectId: string | null, origin: string) {
   const guard = () => {
     if (!auth || !projectId) throw new Error("مساحة العمل غير متاحة لهذه الجلسة");
     return { supabase: auth.supabase, userId: auth.userId, projectId };
@@ -1140,6 +1165,26 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null) {
     },
   });
 
+  const stackPlanTool = tool({
+    description:
+      "يعيد المنظومة الهندسية الموصى بها لبناء مشروع كبير: الإطار والحزم وأوامر التهيئة وبنية المجلدات ومعايير الجودة. نفّذه قبل أي مشروع أكبر من صفحة واحدة، ثم ثبّت الحزم عبر shell/run_command.",
+    inputSchema: z.object({
+      kind: z
+        .enum([
+          "landing",
+          "marketing",
+          "dashboard",
+          "saas",
+          "ecommerce",
+          "api",
+          "realtime",
+          "content",
+        ])
+        .describe("نوع المشروع المطلوب"),
+    }),
+    execute: async ({ kind }) => buildStackPlan(kind as StackKind),
+  });
+
   const seoKit = tool({
     description:
       "يولّد ويكتب طبقة SEO والأصول القياسية للموقع: sitemap.xml و robots.txt و site.webmanifest و favicon.svg وكتلة <head> جاهزة (canonical + Open Graph + JSON-LD). نفّذه قبل النشر وألصق كتلة الـ head في كل صفحة.",
@@ -1498,6 +1543,7 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null) {
       }
       if (!finalSlug) throw new Error("تعذّر إيجاد عنوان متاح للنشر");
 
+      await setDeployedUrl(pid, `${origin}/s/${finalSlug}`);
       await supabase.from("runs").insert({
         project_id: pid,
         user_id: userId,
@@ -1508,9 +1554,72 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null) {
         output: `published at /s/${finalSlug}`,
       });
 
-      return { url: `/s/${finalSlug}`, slug: finalSlug };
+      return { url: `${origin}/s/${finalSlug}`, slug: finalSlug, deployed: true };
     },
   });
+
+  const configureCustomDomain = tool({
+    description:
+      "يربط دوميناً مخصّصاً (مثل example.com) بالموقع المنشور: يتحقّق من سجلات DNS، ثم يهيّئ nginx على السيرفر ويصدر شهادة SSL تلقائياً. استخدمه بعد publish_site فقط. إذا لم تكن سجلات DNS جاهزة يعيد التعليمات الواجب على المستخدم إضافتها عند مزوّد الدومين.",
+    inputSchema: z.object({
+      domain: z.string().describe("الدومين بدون https مثل example.com"),
+      email: z.string().optional().describe("بريد لإصدار شهادة Let's Encrypt (اختياري)"),
+    }),
+    execute: async ({ domain, email }) => {
+      const { supabase, projectId: pid } = guard();
+      const mod = await import("@/lib/domains.server");
+      const clean = mod.normalizeDomain(domain);
+
+      const { data: project } = await supabase
+        .from("projects")
+        .select("slug, published")
+        .eq("id", pid)
+        .maybeSingle();
+      const slug = (project as { slug?: string | null } | null)?.slug ?? "";
+      if (!project || !(project as { published?: boolean }).published || !slug) {
+        throw new Error("انشر الموقع أولاً عبر publish_site ثم اربط الدومين.");
+      }
+
+      const dns = await mod.checkDomainDns(clean);
+      const instructions = mod.dnsInstructions(clean);
+      if (!dns.ok) {
+        await mod.saveDomainState(pid, clean, "pending_dns", dns.detail);
+        return {
+          ok: false,
+          stage: "dns",
+          domain: clean,
+          detail: dns.detail,
+          instructions,
+          message: `سجلات DNS غير جاهزة. اطلب من المستخدم إضافتها ثم أعد المحاولة:\n${instructions}`,
+        };
+      }
+
+      const setup = await mod.requestDomainSetup(
+        clean,
+        slug,
+        email ?? process.env["LETSENCRYPT_EMAIL"] ?? "",
+      );
+      await mod.saveDomainState(
+        pid,
+        clean,
+        setup.ok ? "configuring" : "failed",
+        setup.ok ? null : setup.log,
+      );
+      return {
+        ok: setup.ok,
+        stage: "provision",
+        domain: clean,
+        jobId: setup.jobId,
+        url: `https://${clean}`,
+        instructions,
+        message: setup.ok
+          ? `جارٍ تهيئة ${clean} وإصدار شهادة SSL على السيرفر. الرابط النهائي: https://${clean}`
+          : `تعذّرت التهيئة: ${setup.log}`,
+      };
+    },
+  });
+
+
 
   const appendFile = tool({
     description:
@@ -1728,9 +1837,11 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null) {
     design_review: designReview,
     capture_reference: captureReference,
     brand_kit: brandKit,
+    stack_plan: stackPlanTool,
     seo_kit: seoKit,
     promote_build: promoteBuild,
     publish_site: publishSite,
+    configure_custom_domain: configureCustomDomain,
     generate_image: generateImage,
     env_list: envList,
     env_get: envGet,
@@ -1845,6 +1956,82 @@ function selfTools() {
         return selfWrite(repo, clean, content, message);
       },
     }),
+    self_map: tool({
+      description:
+        "خريطة كود منصة Weaver: المجلدات وعدد ملفاتها وأكبر الملفات. استخدمه أولاً قبل أي إصلاح ذاتي لتحديد مكان العمل بأقل توكينز.",
+      inputSchema: z.object({}),
+      execute: async () => selfMap(repo),
+    }),
+    self_search: tool({
+      description:
+        "بحث نصّي داخل كود المنصة يعيد المسار ورقم السطر والنص. استخدمه للعثور على مكان الميزة أو الخطأ بدل التخمين.",
+      inputSchema: z.object({
+        query: z.string().describe("النص المطلوب البحث عنه"),
+        prefix: z.string().describe("نطاق البحث مثل src أو deploy — استخدم src افتراضياً"),
+      }),
+      execute: async ({ query, prefix }) => selfSearch(repo, query, prefix || "src"),
+    }),
+    self_edit_file: tool({
+      description:
+        "تعديل جراحي على ملف من كود المنصة: يستبدل مقاطع محددة بدل إعادة كتابة الملف كاملاً، ويمر ببوابة تحقق قبل الالتزام. هذه الأداة المفضّلة لإصلاح المنصة.",
+      inputSchema: z.object({
+        path: z.string().describe("مسار الملف داخل مستودع Weaver"),
+        edits: z
+          .array(z.object({ find: z.string(), replace: z.string() }))
+          .describe("مقاطع فريدة للاستبدال (find يجب أن يظهر مرة واحدة فقط)"),
+        message: z.string().describe("رسالة الـ commit بالعربية"),
+      }),
+      execute: async ({ path, edits, message }) => {
+        try {
+          return await selfEdit(repo, path, edits, message);
+        } catch (error) {
+          return { error: error instanceof Error ? error.message : String(error) };
+        }
+      },
+    }),
+    self_auto_repair: tool({
+      description:
+        "حلقة إصلاح مغلقة: يقرأ سجل آخر نشر فاشل، يستخرج رسائل الأخطاء والملفات المتورطة ويعيد محتواها لتصلحها مباشرة عبر self_edit_file ثم تعيد النشر.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        const { getSql } = await import("@/lib/db");
+        const { ensurePlatformTables } = await import("@/lib/platform.server");
+        await ensurePlatformTables();
+        const sql = getSql();
+        const rows = await sql`
+          SELECT status, log, created_at FROM public.platform_deploys
+          ORDER BY created_at DESC LIMIT 1
+        `;
+        const last = rows[0];
+        if (!last) return { ok: true, note: "لا يوجد سجل نشر بعد" };
+        const log = String(last["log"] ?? "");
+        if (last["status"] === "success") return { ok: true, note: "آخر نشر ناجح — لا حاجة للإصلاح" };
+        const lines = log.split("\n");
+        const errors = lines
+          .filter((l) => /error|failed|cannot find|is not|TS\d{4}/i.test(l))
+          .slice(-40);
+        const paths = [
+          ...new Set(
+            [...log.matchAll(/(?:^|[\s(])((?:src|deploy)\/[\w./-]+\.(?:tsx?|jsx?|css|json|mjs|sh))/g)].map(
+              (m) => m[1] as string,
+            ),
+          ),
+        ].slice(0, 5);
+        const files: { path: string; content: string }[] = [];
+        for (const p of paths) {
+          const f = await selfRead(repo, p);
+          if (f.found) files.push({ path: p, content: f.content.slice(0, 20000) });
+        }
+        return {
+          ok: false,
+          status: last["status"],
+          errors,
+          suspectFiles: paths,
+          files,
+          next: "أصلح الملفات أعلاه بـ self_edit_file ثم أعد deploy_platform.",
+        };
+      },
+    }),
     deploy_platform: tool({
       description:
         "ينشر آخر إصدار من كود منصة Weaver على خادم Contabo (سحب من GitHub ثم إعادة بناء الحاويات وفحص صحي)، أو يتراجع عن آخر نشر. استخدمه بعد self_write_file عندما يطلب المالك تفعيل التعديلات على الخادم.",
@@ -1854,9 +2041,15 @@ function selfTools() {
       }),
       execute: async ({ action, confirmed }) => {
         if (!confirmed) return { error: "النشر يحتاج موافقة صريحة من المالك." };
-        const { runDeployHook } = await import("@/lib/platform.server");
-        const result = await runDeployHook(action);
-        return { ok: result.ok, status: result.status, log: result.log.slice(-4000) };
+        const { deployWithGuard } = await import("@/lib/platform.server");
+        const result = await deployWithGuard(action);
+        return {
+          ok: result.ok,
+          status: result.status,
+          health: result.health ?? null,
+          rolledBack: result.rolledBack ?? false,
+          log: result.log.slice(-4000),
+        };
       },
     }),
   };
@@ -2031,6 +2224,29 @@ function webTools() {
       execute: async ({ url }) => webFetch(url),
     }),
   };
+}
+
+/**
+ * يعيد الأصل العام الصحيح للروابط المنشورة.
+ * إذا كان الطلب قادماً من عنوان IP خام (مثل http://194.163.155.52) نستخدم
+ * WEAVER_PUBLIC_URL إن وُجد حتى لا تظهر روابط المشاريع بعنوان IP غير آمن.
+ */
+export function resolvePublicOrigin(requestOrigin: string) {
+  const configured = (
+    process.env["WEAVER_PUBLIC_URL"] || "https://buildbuddy-ai-55.lovable.app"
+  )
+    .trim()
+    .replace(/\/+$/, "");
+  let host = "";
+  try {
+    host = new URL(requestOrigin).hostname;
+  } catch {
+    return configured || requestOrigin;
+  }
+  const isRawIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+  const isLocal = host === "localhost" || host === "127.0.0.1";
+  if (isRawIp && !isLocal) return configured;
+  return requestOrigin;
 }
 
 /** يحوّل أصل الطلب إلى رابط عام ثابت صالح لـ Webhook تيليغرام. */
@@ -2340,6 +2556,21 @@ function applyToolResult(state: LifecycleState, name: string, value: unknown) {
   if (name === "publish_site") state.published = true;
 }
 
+function lifecyclePhase(state: LifecycleState): BuildPhase {
+  if (state.published) return "done";
+  if (state.checksPassed) return "verify";
+  if (state.hasFiles) return "execute";
+  if (state.hasTasks) return "graph";
+  return "intake";
+}
+
+function lifecycleNextAction(state: LifecycleState): NextAction | undefined {
+  if (state.published) return "done";
+  if (!state.hasFiles) return "execute_next_task";
+  if (!state.checksPassed) return "run_checks";
+  return "deploy";
+}
+
 const RETRYABLE_TOOLS = new Set([
   "write_file",
   "write_files",
@@ -2562,7 +2793,7 @@ export function buildWeaverToolset(
       ...planningTools(auth, projectId),
       ...webTools(),
       ...intelTools(auth, projectId),
-      ...workspaceTools(auth, projectId),
+      ...workspaceTools(auth, projectId, origin),
       ...botTools(auth, projectId, origin),
       ...(projectId ? targetSupabaseTools(projectId) : {}),
       ...connectorTools(projectId, auth.userId),
@@ -2582,6 +2813,8 @@ export function buildWeaverSystem(activeSkills: string[], mode: string, customPr
     SYSTEM_PROMPT +
     MEMORY_RULE +
     DESIGN_KIT +
+    DESIGN_LIBRARY +
+    STACK_LIBRARY +
     skillPrompt(activeSkills) +
     customPrompt +
     modePrompt(mode)
@@ -2634,7 +2867,7 @@ export const Route = createFileRoute("/api/chat")({
         const auth = await authenticateRequest(request);
         if (!auth) return new Response("Unauthorized", { status: 401 });
         const projectId = typeof body.projectId === "string" ? body.projectId : null;
-        const origin = new URL(request.url).origin;
+        const origin = resolvePublicOrigin(new URL(request.url).origin);
 
         const requested =
           typeof body.model === "string" && /^[\w.-]+\/[\w.:-]+$/.test(body.model.trim())
@@ -2758,6 +2991,8 @@ export const Route = createFileRoute("/api/chat")({
               SYSTEM_PROMPT +
               MEMORY_RULE +
               DESIGN_KIT +
+              DESIGN_LIBRARY +
+              STACK_LIBRARY +
               skillPrompt(activeSkills) +
               customPrompt +
               (platformPrompt
@@ -2772,7 +3007,7 @@ export const Route = createFileRoute("/api/chat")({
                 ...planningTools(auth, projectId),
 
                 ...webTools(),
-                ...(needs.workspace ? workspaceTools(auth, projectId) : {}),
+                ...(needs.workspace ? workspaceTools(auth, projectId, origin) : {}),
                 ...(needs.bot ? botTools(auth, projectId, origin) : {}),
                 ...(needs.db && projectId ? targetSupabaseTools(projectId) : {}),
                 ...intelTools(auth, projectId),
@@ -2803,18 +3038,32 @@ export const Route = createFileRoute("/api/chat")({
               try {
                 const inputTokens = totalUsage?.inputTokens ?? 0;
                 const outputTokens = totalUsage?.outputTokens ?? 0;
-                if (!inputTokens && !outputTokens) return;
-                await auth.supabase.from("usage_events").insert({
-                  project_id: projectId,
-                  user_id: auth.userId,
-                  model: modelId,
-                  input_tokens: inputTokens,
-                  output_tokens: outputTokens,
-                  total_tokens: totalUsage?.totalTokens ?? inputTokens + outputTokens,
-                  cost_usd: estimateCostUsd(modelId, inputTokens, outputTokens),
-                });
+                if (inputTokens || outputTokens) {
+                  await auth.supabase.from("usage_events").insert({
+                    project_id: projectId,
+                    user_id: auth.userId,
+                    model: modelId,
+                    input_tokens: inputTokens,
+                    output_tokens: outputTokens,
+                    total_tokens: totalUsage?.totalTokens ?? inputTokens + outputTokens,
+                    cost_usd: estimateCostUsd(modelId, inputTokens, outputTokens),
+                  });
+                }
               } catch {
                 // تسجيل الاستهلاك لا يجب أن يُفشل الردّ
+              }
+              if (projectId) {
+                try {
+                  await reconcileProjectState(projectId);
+                  await saveBuildState(
+                    projectId,
+                    { phase: lifecyclePhase(lifecycle) },
+                    lifecycleNextAction(lifecycle),
+                    null,
+                  );
+                } catch {
+                  // حالة البناء مساعدة؛ لا نُفشل الردّ
+                }
               }
             },
           });

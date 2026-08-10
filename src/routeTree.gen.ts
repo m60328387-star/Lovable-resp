@@ -23,6 +23,7 @@ import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as SSplatRouteImport } from './routes/s/$'
 import { Route as AuthenticatedCThreadIdRouteImport } from './routes/_authenticated/c.$threadId'
 import { Route as ApiPublicHealthRouteImport } from './routes/api/public/health'
+import { Route as ApiPublicLiveRouteImport } from './routes/api/public/live'
 import { Route as ApiPublicExecutorActionRouteImport } from './routes/api/public/executor/$action'
 import { Route as ApiPublicHooksSchedulerRouteImport } from './routes/api/public/hooks/scheduler'
 import { Route as ApiPublicRtSplatRouteImport } from './routes/api/public/rt/$'
@@ -99,6 +100,11 @@ const ApiPublicHealthRoute = ApiPublicHealthRouteImport.update({
   path: '/api/public/health',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicLiveRoute = ApiPublicLiveRouteImport.update({
+  id: '/api/public/live',
+  path: '/api/public/live',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicExecutorActionRoute = ApiPublicExecutorActionRouteImport.update({
   id: '/api/public/executor/$action',
   path: '/api/public/executor/$action',
@@ -144,6 +150,7 @@ export interface FileRoutesByFullPath {
   '/s/$': typeof SSplatRoute
   '/c/$threadId': typeof AuthenticatedCThreadIdRoute
   '/api/public/health': typeof ApiPublicHealthRoute
+  '/api/public/live': typeof ApiPublicLiveRoute
   '/api/public/executor/$action': typeof ApiPublicExecutorActionRoute
   '/api/public/hooks/scheduler': typeof ApiPublicHooksSchedulerRoute
   '/api/public/rt/$': typeof ApiPublicRtSplatRoute
@@ -165,6 +172,7 @@ export interface FileRoutesByTo {
   '/s/$': typeof SSplatRoute
   '/c/$threadId': typeof AuthenticatedCThreadIdRoute
   '/api/public/health': typeof ApiPublicHealthRoute
+  '/api/public/live': typeof ApiPublicLiveRoute
   '/api/public/executor/$action': typeof ApiPublicExecutorActionRoute
   '/api/public/hooks/scheduler': typeof ApiPublicHooksSchedulerRoute
   '/api/public/rt/$': typeof ApiPublicRtSplatRoute
@@ -188,6 +196,7 @@ export interface FileRoutesById {
   '/s/$': typeof SSplatRoute
   '/_authenticated/c/$threadId': typeof AuthenticatedCThreadIdRoute
   '/api/public/health': typeof ApiPublicHealthRoute
+  '/api/public/live': typeof ApiPublicLiveRoute
   '/api/public/executor/$action': typeof ApiPublicExecutorActionRoute
   '/api/public/hooks/scheduler': typeof ApiPublicHooksSchedulerRoute
   '/api/public/rt/$': typeof ApiPublicRtSplatRoute
@@ -211,6 +220,7 @@ export interface FileRouteTypes {
     | '/s/$'
     | '/c/$threadId'
     | '/api/public/health'
+    | '/api/public/live'
     | '/api/public/executor/$action'
     | '/api/public/hooks/scheduler'
     | '/api/public/rt/$'
@@ -232,6 +242,7 @@ export interface FileRouteTypes {
     | '/s/$'
     | '/c/$threadId'
     | '/api/public/health'
+    | '/api/public/live'
     | '/api/public/executor/$action'
     | '/api/public/hooks/scheduler'
     | '/api/public/rt/$'
@@ -254,6 +265,7 @@ export interface FileRouteTypes {
     | '/s/$'
     | '/_authenticated/c/$threadId'
     | '/api/public/health'
+    | '/api/public/live'
     | '/api/public/executor/$action'
     | '/api/public/hooks/scheduler'
     | '/api/public/rt/$'
@@ -269,6 +281,7 @@ export interface RootRouteChildren {
   ApiChatRoute: typeof ApiChatRoute
   SSplatRoute: typeof SSplatRoute
   ApiPublicHealthRoute: typeof ApiPublicHealthRoute
+  ApiPublicLiveRoute: typeof ApiPublicLiveRoute
   ApiPublicExecutorActionRoute: typeof ApiPublicExecutorActionRoute
   ApiPublicHooksSchedulerRoute: typeof ApiPublicHooksSchedulerRoute
   ApiPublicRtSplatRoute: typeof ApiPublicRtSplatRoute
@@ -377,6 +390,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/live': {
+      id: '/api/public/live'
+      path: '/api/public/live'
+      fullPath: '/api/public/live'
+      preLoaderRoute: typeof ApiPublicLiveRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/executor/$action': {
       id: '/api/public/executor/$action'
       path: '/api/public/executor/$action'
@@ -454,6 +474,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiChatRoute: ApiChatRoute,
   SSplatRoute: SSplatRoute,
   ApiPublicHealthRoute: ApiPublicHealthRoute,
+  ApiPublicLiveRoute: ApiPublicLiveRoute,
   ApiPublicExecutorActionRoute: ApiPublicExecutorActionRoute,
   ApiPublicHooksSchedulerRoute: ApiPublicHooksSchedulerRoute,
   ApiPublicRtSplatRoute: ApiPublicRtSplatRoute,
@@ -464,13 +485,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

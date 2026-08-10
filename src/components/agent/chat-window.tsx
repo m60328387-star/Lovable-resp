@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 
 import { ProjectPanel } from "@/components/agent/project-panel";
+import { BuildStatusBar } from "@/components/agent/build-status";
 import {
   SpecCard,
   TaskGraphCard,
@@ -31,6 +32,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getConversation,
+  type ConversationResult,
   renameProject,
   saveConversation,
   saveSpec,
@@ -349,6 +351,7 @@ export function ChatWindow({
       key={threadId}
       threadId={threadId}
       initialPrompt={initialPrompt}
+      loadedProject={conversation.data?.project ?? null}
       loadedMessages={((conversation.data?.messages ?? []) as unknown as UIMessage[]).filter(
         (m) => m && Array.isArray(m.parts),
       )}
@@ -359,11 +362,12 @@ export function ChatWindow({
 function ChatSurface({
   threadId,
   initialPrompt,
+  loadedProject,
   loadedMessages,
 }: {
   threadId: string;
   initialPrompt?: string | undefined;
-
+  loadedProject: ConversationResult["project"];
   loadedMessages: UIMessage[];
 }) {
   const queryClient = useQueryClient();
@@ -685,6 +689,15 @@ function ChatSurface({
       <div className="flex h-full min-h-0 flex-1 flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
           <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 sm:px-6 xl:max-w-4xl 2xl:max-w-5xl">
+            {loadedProject && (
+              <BuildStatusBar
+                phase={loadedProject.status}
+                progress={loadedProject.buildProgress}
+                nextAction={loadedProject.nextAction}
+                deployedUrl={loadedProject.deployedUrl}
+                isLive={isBusy || bgActive}
+              />
+            )}
             {messages.length === 0 && (
               <p className="rounded-xl border border-dashed bg-surface/60 px-4 py-6 text-center text-sm text-muted-foreground">
                 اكتب طلبك، وسيبدأ الوكيل من الاستقبال حتى المراقبة.

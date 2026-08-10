@@ -459,8 +459,14 @@ export type Database = {
       }
       projects: {
         Row: {
+          build_progress: number
+          build_state: Json
           created_at: string
+          deployed_url: string | null
           id: string
+          last_check: Json | null
+          last_error: string | null
+          next_action: string | null
           published: boolean
           published_at: string | null
           slug: string | null
@@ -471,8 +477,14 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          build_progress?: number
+          build_state?: Json
           created_at?: string
+          deployed_url?: string | null
           id?: string
+          last_check?: Json | null
+          last_error?: string | null
+          next_action?: string | null
           published?: boolean
           published_at?: string | null
           slug?: string | null
@@ -483,8 +495,14 @@ export type Database = {
           user_id: string
         }
         Update: {
+          build_progress?: number
+          build_state?: Json
           created_at?: string
+          deployed_url?: string | null
           id?: string
+          last_check?: Json | null
+          last_error?: string | null
+          next_action?: string | null
           published?: boolean
           published_at?: string | null
           slug?: string | null

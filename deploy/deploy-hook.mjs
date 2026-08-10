@@ -21,6 +21,8 @@ const BIND = process.env.DEPLOY_HOOK_HOST || "0.0.0.0";
 const TOKEN = process.env.EXECUTOR_TOKEN || "";
 const JOB_DIR = process.env.DEPLOY_JOB_DIR || "/tmp/weaver-deploy-jobs";
 let activeJob = null;
+let activeSince = 0;
+const STALE_MS = Number(process.env.DEPLOY_JOB_STALE_MS || 20 * 60 * 1000);
 
 mkdirSync(JOB_DIR, { recursive: true });
 
@@ -28,13 +30,15 @@ function jobPath(id, suffix) {
   return resolve(JOB_DIR, `${id}.${suffix}`);
 }
 
-function startJob(id, action, script, args) {
+function startJob(id, action, script, args, extraEnv = {}) {
   const log = createWriteStream(jobPath(id, "log"), { flags: "a" });
   writeFileSync(
     jobPath(id, "json"),
     JSON.stringify({ id, action, status: "running", startedAt: new Date().toISOString() }),
   );
-  const child = spawn("bash", args, { cwd: ROOT, env: process.env });
+  activeJob = id;
+  activeSince = Date.now();
+  const child = spawn("bash", args, { cwd: ROOT, env: { ...process.env, ...extraEnv } });
   child.stdout.pipe(log);
   child.stderr.pipe(log);
   child.on("close", (code) => {
@@ -45,6 +49,7 @@ function startJob(id, action, script, args) {
     );
     log.end(`\n[${action}] exit=${code ?? 1}\n`);
     activeJob = null;
+    activeSince = 0;
   });
   child.on("error", (error) => {
     writeFileSync(
@@ -60,6 +65,7 @@ function startJob(id, action, script, args) {
     );
     log.end(`\n${error.message}\n`);
     activeJob = null;
+    activeSince = 0;
   });
 }
 
@@ -84,15 +90,67 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === "GET" && req.url === "/health") {
+  if (req.method === "POST" && req.url === "/cancel") {
+    const previous = activeJob;
+    activeJob = null;
+    activeSince = 0;
     res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-    res.end(JSON.stringify({ ok: true, activeJob, time: new Date().toISOString() }));
+    res.end(JSON.stringify({ ok: true, cleared: previous }));
+    return;
+  }
+
+  if ((req.method === "GET" || req.method === "HEAD") && req.url === "/health") {
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+    res.end(
+      JSON.stringify({ ok: true, activeJob, activeSince, time: new Date().toISOString() }),
+    );
+    return;
+  }
+
+  // ربط دومين مخصّص بموقع منشور: يشغّل deploy/add-domain.sh (nginx + certbot).
+  if (req.method === "POST" && req.url === "/domain") {
+    let raw = "";
+    for await (const chunk of req) raw += chunk;
+    let input = {};
+    try {
+      input = raw ? JSON.parse(raw) : {};
+    } catch {
+      input = {};
+    }
+    const domain = String(input.domain || "").toLowerCase();
+    const slug = String(input.slug || "").toLowerCase();
+    const email = String(input.email || "");
+    if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(domain)) {
+      res.writeHead(400).end("invalid domain");
+      return;
+    }
+    if (!/^[a-z0-9][a-z0-9-]{0,60}$/.test(slug)) {
+      res.writeHead(400).end("invalid slug");
+      return;
+    }
+    const domainJob = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    res.writeHead(202, { "Content-Type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify({ ok: true, accepted: true, jobId: domainJob, action: "domain" }));
+    setImmediate(() =>
+      startJob(domainJob, "domain", "deploy/add-domain.sh", ["deploy/add-domain.sh"], {
+        DOMAIN: domain,
+        SLUG: slug,
+        LE_EMAIL: email,
+      }),
+    );
     return;
   }
 
   if (req.method !== "POST" || req.url !== "/deploy") {
     res.writeHead(405).end("method not allowed");
     return;
+  }
+
+
+  if (activeJob && Date.now() - activeSince > STALE_MS) {
+    // مهمة معلّقة منذ وقت طويل (سكربت لم ينتهِ) — نحرّر القفل بدل تعطيل النشر للأبد.
+    activeJob = null;
+    activeSince = 0;
   }
 
   if (activeJob) {
@@ -118,6 +176,7 @@ const server = createServer(async (req, res) => {
       : [script];
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   activeJob = id;
+  activeSince = Date.now();
 
   // Respond before rebuilding the app container. Otherwise the caller is killed
   // with its own HTTP request still open and reports a false deployment failure.

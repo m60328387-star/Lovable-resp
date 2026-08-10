@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { LifecycleRail } from "@/components/agent/lifecycle-rail";
+import { BuildStatusBar } from "@/components/agent/build-status";
 import { createProject, deleteProject, listProjects } from "@/lib/projects.functions";
 import { exitSession } from "@/lib/auth.functions";
 import { deployPlatform } from "@/lib/platform.functions";
@@ -135,7 +136,7 @@ export function AppShell({
               <li
                 key={project.id}
                 className={cn(
-                  "group flex items-center gap-1 rounded-lg px-1 transition-colors",
+                  "group rounded-lg px-1 transition-colors",
                   activeThreadId === project.id ? "bg-surface-strong" : "hover:bg-surface",
                 )}
               >
@@ -143,15 +144,40 @@ export function AppShell({
                   to="/c/$threadId"
                   params={{ threadId: project.id }}
                   onClick={() => setOpen(false)}
-                  className="flex-1 truncate px-2 py-2 text-[13px]"
+                  className="block px-2 py-2"
                 >
-                  {project.title}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-[13px]">{project.title}</span>
+                    <span
+                      className={cn(
+                        "shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
+                        project.status === "done"
+                          ? "bg-emerald-500/15 text-emerald-600"
+                          : project.status === "blocked" || project.next_action === null
+                            ? "bg-destructive/15 text-destructive"
+                            : "bg-primary/15 text-primary",
+                      )}
+                    >
+                      {project.status === "done" ? "مكتمل" : project.status === "blocked" ? "متوقف" : "يعمل"}
+                    </span>
+                  </div>
+                  <div className="mt-1.5 flex items-center justify-between">
+                    <BuildStatusBar
+                      phase={project.status}
+                      progress={project.build_progress}
+                      nextAction={project.next_action}
+                      compact
+                    />
+                    <span className="text-[10px] text-muted-foreground" dir="ltr">
+                      {project.build_progress}%
+                    </span>
+                  </div>
                 </Link>
                 <button
                   type="button"
                   aria-label="حذف المهمة"
                   onClick={() => remove.mutate(project.id)}
-                  className="grid size-7 place-items-center rounded-md text-muted-foreground opacity-0 transition hover:text-destructive group-hover:opacity-100"
+                  className="mx-1 mb-1 grid size-7 place-items-center rounded-md text-muted-foreground opacity-0 transition hover:text-destructive group-hover:opacity-100"
                 >
                   <Trash2 className="size-3.5" />
                 </button>

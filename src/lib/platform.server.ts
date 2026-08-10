@@ -1,4 +1,5 @@
 import { getSql } from "@/lib/db";
+import { deployHookEndpoint, deployHookUrl } from "./deploy-hook.server";
 
 /**
  * طبقة «تطوير المنصة»: تخزين التغييرات المقترحة على كود Weaver نفسه،
@@ -160,15 +161,16 @@ export async function runDeployHook(
   action: "deploy" | "rollback",
   ref?: string,
 ): Promise<DeployResult> {
-  const url = process.env["PLATFORM_DEPLOY_URL"];
+  const url = deployHookUrl();
   const token = process.env["EXECUTOR_TOKEN"];
-  if (!url) {
+  if (!token) {
     return {
       ok: false,
       status: 0,
-      log: "خطّاف النشر غير مضبوط. أضف PLATFORM_DEPLOY_URL (و EXECUTOR_TOKEN) في deploy/.env على الخادم، وشغّل deploy/deploy-hook.mjs.",
+      log: "رمز الخطّاف غير مضبوط. أضف EXECUTOR_TOKEN (نفس الرمز الموجود في deploy/.env على الخادم) ثم أعد المحاولة.",
     };
   }
+
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -196,7 +198,29 @@ export async function runDeployHook(
         log: `تم قبول مهمة ${action === "rollback" ? "التراجع" : "النشر"} وستستمر في الخلفية${jobId ? ` (المهمة: ${jobId})` : ""}. سيُعاد تشغيل Weaver تلقائياً عند اكتمالها.`,
       };
     }
+    if (res.status === 409) {
+      let stuckJob = "";
+      try {
+        stuckJob = String((JSON.parse(response) as { jobId?: unknown }).jobId ?? "");
+      } catch {
+        /* رد غير JSON */
+      }
+      return {
+        ok: false,
+        status: 409,
+        jobId: stuckJob,
+        log: `هناك مهمة نشر عالقة على الخادم${stuckJob ? ` (${stuckJob})` : ""}. حرّرها عبر: curl -X POST -H "Authorization: Bearer $EXECUTOR_TOKEN" http://127.0.0.1:8790/cancel — أو أعد تشغيل الخدمة: systemctl restart weaver-deploy-hook`,
+      };
+    }
+    if (res.status === 401) {
+      return {
+        ok: false,
+        status: 401,
+        log: "رفض الخطّاف المصادقة: EXECUTOR_TOKEN في التطبيق لا يطابق الموجود في deploy/.env على الخادم.",
+      };
+    }
     return { ok: res.ok, status: res.status, log: response.slice(0, 20000) };
+
   } catch (error) {
     return { ok: false, status: 0, log: error instanceof Error ? error.message : String(error) };
   }
@@ -223,9 +247,9 @@ export async function recordDeploy(
 /** يطابق المهام المقبولة مع نتيجتها الحقيقية بعد عودة التطبيق من إعادة التشغيل. */
 export async function syncPendingDeploys(): Promise<void> {
   await ensurePlatformTables();
-  const deployUrl = process.env["PLATFORM_DEPLOY_URL"];
+  const deployUrl = deployHookUrl();
   const token = process.env["EXECUTOR_TOKEN"];
-  if (!deployUrl) return;
+  if (!token) return;
 
   const sql = getSql();
   const pending = await sql`
@@ -277,17 +301,17 @@ export async function pingDeployHook(): Promise<{
   reachable: boolean;
   error?: string;
 }> {
-  const url = process.env["PLATFORM_DEPLOY_URL"];
   const token = process.env["EXECUTOR_TOKEN"];
-  if (!url) return { configured: false, reachable: false };
+  if (!token) return { configured: false, reachable: false };
   try {
-    const statusUrl = url.replace(/\/deploy\/?$/, "/status/ping");
+    const statusUrl = deployHookEndpoint("/status/ping");
     const res = await fetch(statusUrl, {
       method: "GET",
       signal: AbortSignal.timeout(5_000),
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: { Authorization: `Bearer ${token}` },
     });
-    return { configured: true, reachable: res.ok };
+    // 404/405 يعنيان أن الخطّاف يعمل وقَبِل المصادقة (المهمة "ping" غير موجودة).
+    return { configured: true, reachable: res.status !== 401 && res.status < 500 };
   } catch (error) {
     return {
       configured: true,
@@ -331,4 +355,47 @@ export async function getGithubHead(): Promise<{
       error: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+/** فحص صحي للنسخة المنشورة بعد النشر (مع محاولات متكررة). */
+export async function verifyDeployHealth(
+  attempts = 10,
+  delayMs = 6000,
+): Promise<{ ok: boolean; status: number; detail: string }> {
+  const base = (process.env["PLATFORM_PUBLIC_URL"] ?? "").replace(/\/+$/, "");
+  if (!base) return { ok: true, status: 0, detail: "PLATFORM_PUBLIC_URL غير مضبوط — تخطّي الفحص" };
+  let last = { ok: false, status: 0, detail: "" };
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      const res = await fetch(`${base}/api/public/health`, {
+        signal: AbortSignal.timeout(8000),
+        headers: { "cache-control": "no-cache" },
+      });
+      const body = (await res.text()).slice(0, 1000);
+      if (res.ok) return { ok: true, status: res.status, detail: body };
+      last = { ok: false, status: res.status, detail: body };
+    } catch (error) {
+      last = { ok: false, status: 0, detail: error instanceof Error ? error.message : String(error) };
+    }
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
+  return last;
+}
+
+/** ينشر ثم يتحقق صحياً، ويتراجع تلقائياً عند فشل الفحص. */
+export async function deployWithGuard(action: "deploy" | "rollback"): Promise<
+  DeployResult & { health?: { ok: boolean; status: number; detail: string }; rolledBack?: boolean }
+> {
+  const result = await runDeployHook(action);
+  if (!result.ok || action === "rollback") return result;
+  const health = await verifyDeployHealth();
+  if (health.ok) return { ...result, health };
+  const rollback = await runDeployHook("rollback");
+  return {
+    ...result,
+    ok: false,
+    health,
+    rolledBack: rollback.ok,
+    log: `${result.log}\n\nفشل الفحص الصحي بعد النشر (${health.status}): ${health.detail}\nتم التراجع تلقائياً: ${rollback.ok ? "نجح" : "فشل"}\n${rollback.log}`,
+  };
 }

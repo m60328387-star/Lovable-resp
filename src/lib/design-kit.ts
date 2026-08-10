@@ -47,5 +47,13 @@ export const DESIGN_KIT = `
 
 8ب) الأصول: صور بصيغة WebP/AVIF مضغوطة (يمكن ضغطها على المنفّذ بـ npx --yes sharp-cli)، خطوط عربية بـ display=swap و preload للخط الأساسي فقط، أيقونة favicon.svg و site.webmanifest من أداة seo_kit، وكل صورة بأبعاد صريحة width/height لمنع القفز التخطيطي (CLS).
 
-9) قبل النشر: نفّذ run_checks، ثم راجع بنفسك قائمة البنود 1-8 وصرّح بالنتيجة بنداً بنداً. أي بند فاشل = أصلحه قبل publish_site. ثم نفّذ visual_audit و design_review و seo_kit — لا نشر قبل VERDICT: pass.
+8ج) ميزانية الأداء (enterprise) — غير قابلة للتفاوض:
+   - الاعتماديات الخارجية: صفر أو واحدة للموقع التعريفي، وثلاث كحد أقصى للوحات المعقّدة، ولكل واحدة مبرر مكتوب.
+   - فضّل الأصلي دائماً: IntersectionObserver بدل AOS، CSS transition/animation بدل Animate.css وGSAP البسيط، scroll-behavior بدل Lenis، scroll-snap بدل Swiper، <dialog> بدل SweetAlert2، SVG inline بدل حزمة أيقونات كاملة.
+   - ممنوع cdn.tailwindcss.com في نسخة تُنشر (تصريف وقت تشغيل = رسم أول بطيء).
+   - ممنوع منعاً باتاً حقن CSS من JS (createElement("style") / innerHTML لـ <style> / insertRule / نصوص أنماط داخل السكربت). الأنماط في ملفات .css ثابتة فقط، والتغيير عبر classList أو style.setProperty لمتغيّرات CSS.
+   - كل <script> بـ defer أو module، وpreconnect للنطاقات الخارجية، وpreload لخط واحد فقط.
+   - مستمعات passive + rAF/debounce لأحداث scroll وresize، ولا مؤقتات دائمة.
+
+9) قبل النشر: نفّذ run_checks، ثم راجع بنفسك قائمة البنود 1-8ج وصرّح بالنتيجة بنداً بنداً. أي بند فاشل = أصلحه قبل publish_site. ثم نفّذ visual_audit و design_review و seo_kit — لا نشر قبل VERDICT: pass.
 `;

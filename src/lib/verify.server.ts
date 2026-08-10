@@ -23,18 +23,56 @@ function ext(path: string) {
   return i === -1 ? "" : path.slice(i + 1).toLowerCase();
 }
 
+/** يرصد حقن CSS ديناميكياً من JavaScript — ممنوع في معايير الأداء. */
+function checkStyleInjection(file: WorkspaceFile, source: string): Issue[] {
+  const issues: Issue[] = [];
+  if (/createElement\s*\(\s*["'`]style["'`]\s*\)/i.test(source)) {
+    issues.push({
+      path: file.path,
+      severity: "error",
+      message: "حقن CSS ديناميكي: createElement(\"style\") — انقل الأنماط إلى ملف .css ثابت",
+    });
+  }
+  if (/\.(insertRule|addRule)\s*\(/.test(source)) {
+    issues.push({
+      path: file.path,
+      severity: "error",
+      message: "حقن CSS ديناميكي عبر insertRule — استخدم أصنافاً في ملف .css بدلاً منه",
+    });
+  }
+  if (/(innerHTML|insertAdjacentHTML|document\.write)\s*[(=][^;]{0,200}<style/i.test(source)) {
+    issues.push({
+      path: file.path,
+      severity: "error",
+      message: "كتابة وسم <style> من JavaScript — انقل الأنماط إلى ملف .css ثابت",
+    });
+  }
+  const inlineStyleWrites = source.match(/\.style\.(?!setProperty|removeProperty)[A-Za-z]/g) ?? [];
+  if (inlineStyleWrites.length > 8) {
+    issues.push({
+      path: file.path,
+      severity: "warning",
+      message: `${inlineStyleWrites.length} تعديل أنماط مباشر من JS — استخدم classList أو style.setProperty لمتغيّرات CSS`,
+    });
+  }
+  return issues;
+}
+
 function checkJs(file: WorkspaceFile): Issue[] {
+  const styleIssues = checkStyleInjection(file, file.content);
+
   const opts = { ecmaVersion: 2023 as const, locations: true };
   try {
     acornParse(file.content, { ...opts, sourceType: "module" });
-    return [];
+    return styleIssues;
   } catch {
     try {
       acornParse(file.content, { ...opts, sourceType: "script" });
-      return [];
+      return styleIssues;
     } catch (error) {
       const err = error as { message?: string; loc?: { line?: number } };
       return [
+        ...styleIssues,
         {
           path: file.path,
           severity: "error",
@@ -287,6 +325,74 @@ function checkHtml(file: WorkspaceFile, all: WorkspaceFile[]): Issue[] {
       message: "لا توجد وسوم دلالية (header/nav/main/section/footer)",
     });
   }
+
+  // ===== ميزانية الأداء =====
+  const inlineScripts = html.match(/<script\b(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/gi) ?? [];
+  for (const block of inlineScripts) {
+    issues.push(...checkStyleInjection(file, block));
+  }
+
+  const externalScripts = [
+    ...html.matchAll(/<script\b[^>]*\ssrc\s*=\s*["'](https?:\/\/[^"']+)["']/gi),
+  ].map((m) => m[1] ?? "");
+  const externalStyles = [
+    ...html.matchAll(/<link\b[^>]*\shref\s*=\s*["'](https?:\/\/[^"']+)["'][^>]*>/gi),
+  ]
+    .filter((m) => /stylesheet/i.test(m[0]))
+    .map((m) => m[1] ?? "")
+    .filter((href) => !/fonts\.googleapis\.com|fonts\.gstatic\.com/i.test(href));
+  const externalDeps = [...externalScripts, ...externalStyles];
+  if (externalDeps.length > 3) {
+    issues.push({
+      path: file.path,
+      severity: "error",
+      message: `${externalDeps.length} اعتماديات خارجية — الحد الأقصى 3، واستبدل الباقي ببدائل أصلية (IntersectionObserver / CSS animation / scroll-snap / <dialog>)`,
+    });
+  } else if (externalDeps.length > 1) {
+    issues.push({
+      path: file.path,
+      severity: "warning",
+      message: `${externalDeps.length} اعتماديات خارجية — الموقع التعريفي يجب أن يبقى عند واحدة أو صفر`,
+    });
+  }
+
+  if (/cdn\.tailwindcss\.com/i.test(html)) {
+    issues.push({
+      path: file.path,
+      severity: "error",
+      message: "cdn.tailwindcss.com مُصرّف وقت تشغيل يبطئ الرسم الأول — استبدله بـ CSS مخصص بالمتغيرات",
+    });
+  }
+
+  const blockingScripts = [...html.matchAll(/<script\b[^>]*\ssrc\s*=[^>]*>/gi)]
+    .map((m) => m[0])
+    .filter((tag) => !/\s(defer|async)\b/i.test(tag) && !/type\s*=\s*["']module["']/i.test(tag));
+  if (blockingScripts.length > 0) {
+    issues.push({
+      path: file.path,
+      severity: "warning",
+      message: `${blockingScripts.length} سكربت يحجب الرسم — أضف defer أو type="module"`,
+    });
+  }
+
+  const sizedImgs = imgs.filter((tag) => /\swidth\s*=/i.test(tag) && /\sheight\s*=/i.test(tag));
+  if (imgs.length > 0 && sizedImgs.length < imgs.length) {
+    issues.push({
+      path: file.path,
+      severity: "warning",
+      message: `${imgs.length - sizedImgs.length} صورة بلا width/height صريحين — يسبب قفزاً تخطيطياً (CLS)`,
+    });
+  }
+
+  if (externalDeps.length > 0 && !/rel\s*=\s*["']preconnect["']/i.test(html)) {
+    issues.push({
+      path: file.path,
+      severity: "warning",
+      message: "لا يوجد preconnect للنطاقات الخارجية المستخدمة",
+    });
+  }
+
+
 
   const known = new Set(all.map((f) => f.path.replace(/^\.?\//, "")));
   const refRe = /(?:href|src)\s*=\s*["']([^"']+)["']/gi;

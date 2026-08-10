@@ -20,6 +20,7 @@ export const TOOL_LABELS: Record<string, string> = {
   capture_reference: "التقاط مرجع",
   brand_kit: "توليد الهوية البصرية",
   seo_kit: "تحسين محركات البحث",
+  stack_plan: "اختيار المنظومة التقنية",
   promote_build: "ترقية البناء",
   publish_site: "نشر الموقع",
   generate_image: "توليد صورة",
@@ -55,6 +56,10 @@ export const TOOL_LABELS: Record<string, string> = {
   platform_settings_get: "قراءة إعدادات المنصة",
   self_list_files: "سرد كود المنصة",
   self_read_file: "قراءة كود المنصة",
+  self_map: "خريطة كود المنصة",
+  self_search: "بحث في كود المنصة",
+  self_edit_file: "تعديل جراحي على المنصة",
+  self_auto_repair: "إصلاح ذاتي للمنصة",
   self_write_file: "تعديل كود المنصة",
 };
 

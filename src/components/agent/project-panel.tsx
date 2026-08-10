@@ -27,7 +27,9 @@ import {
 } from "lucide-react";
 import { zipSync, unzipSync, strToU8, strFromU8 } from "fflate";
 import { buildPreviewDocument } from "@/lib/preview";
-import { pushWorkspaceToGithub } from "@/lib/github.functions";
+import { createProjectRepo, exportProjectDatabase } from "@/lib/delivery.functions";
+import { DomainCard } from "@/components/agent/domain-card";
+
 import { importWorkspaceFiles } from "@/lib/import.functions";
 import { getConversation, getWorkspace } from "@/lib/projects.functions";
 import { getPublishState, publishProject } from "@/lib/publish.functions";
@@ -279,19 +281,47 @@ export function ProjectPanel({
     }
   };
 
-  const [pushing, setPushing] = useState(false);
+  const [creatingRepo, setCreatingRepo] = useState(false);
+  const [exportingDb, setExportingDb] = useState(false);
 
-  const pushToGithub = async () => {
-    setPushing(true);
+  const downloadText = (name: string, text: string, type: string) => {
+    const blob = new Blob([text], { type });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = name;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const createRepo = async () => {
+    const name = window.prompt("اسم مستودع GitHub الجديد للمشروع:", `weaver-${projectId.slice(0, 8)}`);
+    if (!name) return;
+    setCreatingRepo(true);
     try {
-      const result = await pushWorkspaceToGithub({ data: { projectId } });
-      toast.success(`تم الرفع إلى ${result.repo} (${result.branch}) — ${result.count} ملف`);
+      const result = await createProjectRepo({ data: { projectId, name, private: true } });
+      toast.success(`تم إنشاء ${result.repo} ورفع ${result.count} ملف`);
+      window.open(result.url, "_blank", "noopener");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "فشل الرفع إلى GitHub");
+      toast.error(error instanceof Error ? error.message : "فشل إنشاء المستودع");
     } finally {
-      setPushing(false);
+      setCreatingRepo(false);
     }
   };
+
+  const exportDatabase = async () => {
+    setExportingDb(true);
+    try {
+      const result = await exportProjectDatabase({ data: { projectId } });
+      downloadText(`${result.schema}.sql`, result.sql, "application/sql");
+      toast.success(`تم تصدير ${result.tables} جدول و${result.rows} صف`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "فشل تصدير قاعدة البيانات");
+    } finally {
+      setExportingDb(false);
+    }
+  };
+
 
   const [publishing, setPublishing] = useState(false);
   const publishState = useQuery({
@@ -547,13 +577,23 @@ export function ProjectPanel({
                 </button>
                 <button
                   type="button"
-                  onClick={() => void pushToGithub()}
-                  disabled={pushing}
+                  onClick={() => void createRepo()}
+                  disabled={creatingRepo}
                   className="inline-flex items-center gap-1.5 rounded-lg border bg-card px-2.5 py-1.5 text-[11px] font-semibold hover:bg-surface disabled:opacity-60"
                 >
                   <GitBranch className="size-3" />
-                  {pushing ? "يرفع…" : "رفع إلى GitHub"}
+                  {creatingRepo ? "ينشئ…" : "مستودع جديد للمشروع"}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => void exportDatabase()}
+                  disabled={exportingDb}
+                  className="inline-flex items-center gap-1.5 rounded-lg border bg-card px-2.5 py-1.5 text-[11px] font-semibold hover:bg-surface disabled:opacity-60"
+                >
+                  <Download className="size-3" />
+                  {exportingDb ? "يصدّر…" : "تصدير قاعدة البيانات"}
+                </button>
+
                 <button
                   type="button"
                   onClick={() => void publish()}
@@ -603,6 +643,13 @@ export function ProjectPanel({
                   إعادة تحميل
                 </button>
               </div>
+
+              <DomainCard
+                projectId={projectId}
+                published={Boolean(publishState.data?.published)}
+              />
+
+
 
               <div className="flex min-h-0 flex-1 justify-center overflow-auto rounded-lg border bg-surface p-2">
                 <iframe
