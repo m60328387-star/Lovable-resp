@@ -80,10 +80,17 @@ mkdir -p "$BACKUP"
 tar cf - -C "$ROOT" --exclude=node_modules --exclude=.output --exclude=dist . | tar xf - -C "$BACKUP"
 
 echo "== تحديث الكود =="
-rm -rf "$ROOT/src" "$ROOT/public"
+# استبدال نظيف: قد يحتوي الإصدار الحالي على ملفات جذرية تخص موقع عميل
+# (index.html/styles.css/...) نتيجة رفع خاطئ سابق. إبقاؤها يجعل Vite يبني
+# موقع العميل بدلاً من Weaver حتى لو كانت src الجديدة صحيحة.
+SAVED_ENV="$(mktemp)"
+cp "$BACKUP/deploy/.env" "$SAVED_ENV"
+find "$ROOT" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 cp -a "$TMP/src/." "$ROOT/"
 # لا نسمح للكود المسحوب بأن يمسح أسرار الخادم
-cp -a "$BACKUP/deploy/.env" "$ENV_FILE"
+mkdir -p "$(dirname "$ENV_FILE")"
+cp "$SAVED_ENV" "$ENV_FILE"
+rm -f "$SAVED_ENV"
 rm -rf "$TMP"
 
 echo "== إعادة البناء =="
