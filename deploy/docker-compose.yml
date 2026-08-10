@@ -17,6 +17,9 @@ services:
       - RUNTIME_URL=http://runtime:4100
     volumes:
       - ../backups:/backups:ro
+    # حجز موارد للمنصة نفسها حتى لا يخنقها بناء أي مشروع.
+    cpus: ${APP_CPUS:-2}
+    mem_limit: ${APP_MEMORY:-2g}
     ports:
       - "127.0.0.1:${WEAVER_APP_PORT:-3010}:3000"
     extra_hosts:
@@ -50,6 +53,11 @@ services:
       - RUNTIME_PORT=4100
       - RUNTIME_ROOT=/workspaces
       - RUNTIME_PORT_BASE=${RUNTIME_PORT_BASE:-5200}
+      - RUNTIME_HEAVY_CONCURRENCY=${RUNTIME_HEAVY_CONCURRENCY:-1}
+      - RUNTIME_MAX_SERVERS=${RUNTIME_MAX_SERVERS:-3}
+      - RUNTIME_IDLE_STOP_MS=${RUNTIME_IDLE_STOP_MS:-1200000}
+      - RUNTIME_WORKSPACE_TTL_MS=${RUNTIME_WORKSPACE_TTL_MS:-1209600000}
+      - RUNTIME_NPM_CACHE=/workspaces/.npm-cache
     volumes:
       - runtime-workspaces:/workspaces
     networks:
@@ -81,6 +89,8 @@ services:
       - MESSAGE_INTEGRITY_INTERVAL_MS=${MESSAGE_INTEGRITY_INTERVAL_MS:-900000}
     networks:
       - weaver
+    cpus: ${WORKER_CPUS:-1}
+    mem_limit: ${WORKER_MEMORY:-1g}
     healthcheck:
       test:
         - CMD-SHELL
@@ -105,6 +115,8 @@ services:
       - ./db/init:/docker-entrypoint-initdb.d:ro
     networks:
       - weaver
+    mem_limit: ${DB_MEMORY:-1500m}
+    shm_size: 256m
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s

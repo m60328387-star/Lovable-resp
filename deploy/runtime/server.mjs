@@ -25,14 +25,56 @@ if (!TOKEN || TOKEN.length < 16) {
   process.exit(1);
 }
 
-/** @type {Map<string, {proc: import('node:child_process').ChildProcess, port: number, command: string, mode: string, logs: string[], startedAt: number, ready: boolean, exitCode: number|null}>} */
+/** @type {Map<string, any>} */
 const servers = new Map();
+
+// ====== ضبط الموارد على خادم واحد ======
+// الهدف: ألا يخنق أي مشروع المنصةَ نفسها. ثلاث آليات:
+// 1) طابور للأوامر الثقيلة (npm install/build) بحد أقصى واحد في اللحظة.
+// 2) سقف لعدد خوادم التطوير الحيّة مع إخراج الأقدم خمولاً.
+// 3) حاصد يوقف الخوادم الخاملة ويحذف مساحات العمل المهجورة.
+const HEAVY_CONCURRENCY = Math.max(1, Number(process.env["RUNTIME_HEAVY_CONCURRENCY"] ?? 1));
+const MAX_SERVERS = Math.max(1, Number(process.env["RUNTIME_MAX_SERVERS"] ?? 3));
+const IDLE_STOP_MS = Number(process.env["RUNTIME_IDLE_STOP_MS"] ?? 20 * 60_000);
+const WORKSPACE_TTL_MS = Number(process.env["RUNTIME_WORKSPACE_TTL_MS"] ?? 14 * 86_400_000);
+const NPM_CACHE = process.env["RUNTIME_NPM_CACHE"] ?? "/workspaces/.npm-cache";
+
+const heavyQueue = [];
+let heavyRunning = 0;
+
+const isHeavy = (command) => /\b(npm|pnpm|yarn|bun|npx|vite|tsc|next|webpack|esbuild)\b/i.test(command);
+
+/** ينفّذ المهام الثقيلة بالتتابع حتى لا تلتهم الذاكرة دفعة واحدة. */
+function withHeavySlot(task) {
+  return new Promise((resolve, reject) => {
+    const run = async () => {
+      heavyRunning += 1;
+      try {
+        resolve(await task());
+      } catch (err) {
+        reject(err);
+      } finally {
+        heavyRunning -= 1;
+        const next = heavyQueue.shift();
+        if (next) next();
+      }
+    };
+    if (heavyRunning < HEAVY_CONCURRENCY) run();
+    else heavyQueue.push(run);
+  });
+}
+
+const touch = (id) => {
+  const entry = servers.get(id);
+  if (entry) entry.lastSeen = Date.now();
+};
 
 const safeId = (value) =>
   String(value ?? "")
     .replace(/[^a-zA-Z0-9_-]/g, "")
     .slice(0, 64);
 const workspaceDir = (projectId) => join(ROOT, safeId(projectId));
+
 
 function json(res, body, status = 200) {
   const payload = JSON.stringify(body);
@@ -135,39 +177,53 @@ async function readWorkspaceFile(projectId, path) {
 async function runCommand(projectId, command, timeoutMs) {
   const dir = workspaceDir(projectId);
   await mkdir(dir, { recursive: true });
-  return new Promise((done) => {
-    const started = Date.now();
-    const child = exec(command, {
-      cwd: dir,
-      timeout: Math.min(timeoutMs || MAX_EXEC_MS, MAX_EXEC_MS),
-      maxBuffer: MAX_OUTPUT,
-      env: { ...process.env, CI: "1", npm_config_fund: "false", npm_config_audit: "false" },
+  const heavy = isHeavy(command);
+  const exec1 = () =>
+    new Promise((done) => {
+      const started = Date.now();
+      // الأوامر الثقيلة تعمل بأولوية منخفضة (nice) حتى تبقى المنصة مستجيبة.
+      const child = exec(heavy ? `nice -n 15 sh -c ${JSON.stringify(command)}` : command, {
+        cwd: dir,
+        timeout: Math.min(timeoutMs || MAX_EXEC_MS, MAX_EXEC_MS),
+        maxBuffer: MAX_OUTPUT,
+        env: {
+          ...process.env,
+          CI: "1",
+          npm_config_fund: "false",
+          npm_config_audit: "false",
+          npm_config_cache: NPM_CACHE,
+          npm_config_progress: "false",
+          NODE_OPTIONS: process.env["NODE_OPTIONS"] ?? "--max-old-space-size=1024",
+        },
+      });
+
+      let output = "";
+      const append = (chunk) => {
+        if (output.length < MAX_OUTPUT) output += chunk;
+      };
+      child.stdout?.on("data", append);
+      child.stderr?.on("data", append);
+      child.on("close", (code, signal) =>
+        done({
+          ok: code === 0,
+          exitCode: code ?? (signal ? 124 : 1),
+          signal: signal ?? null,
+          output: output.slice(-MAX_OUTPUT),
+          durationMs: Date.now() - started,
+        }),
+      );
+      child.on("error", (err) =>
+        done({
+          ok: false,
+          exitCode: 1,
+          output: `${output}\n${String(err)}`,
+          durationMs: Date.now() - started,
+        }),
+      );
     });
-    let output = "";
-    const append = (chunk) => {
-      if (output.length < MAX_OUTPUT) output += chunk;
-    };
-    child.stdout?.on("data", append);
-    child.stderr?.on("data", append);
-    child.on("close", (code, signal) =>
-      done({
-        ok: code === 0,
-        exitCode: code ?? (signal ? 124 : 1),
-        signal: signal ?? null,
-        output: output.slice(-MAX_OUTPUT),
-        durationMs: Date.now() - started,
-      }),
-    );
-    child.on("error", (err) =>
-      done({
-        ok: false,
-        exitCode: 1,
-        output: `${output}\n${String(err)}`,
-        durationMs: Date.now() - started,
-      }),
-    );
-  });
+  return heavy ? withHeavySlot(exec1) : exec1();
 }
+
 
 // ---------------------------------------------------------------- dev server
 
@@ -202,11 +258,25 @@ async function stopDev(projectId) {
   return { ok: true, stopped: true };
 }
 
+/** يُخرج أقدم الخوادم خمولاً عند بلوغ السقف — الذاكرة محدودة على خادم واحد. */
+async function enforceServerCap(exceptId) {
+  const live = [...servers.entries()]
+    .filter(([id, e]) => id !== exceptId && e.port > 0 && e.exitCode === null)
+    .sort((a, b) => (a[1].lastSeen ?? a[1].startedAt) - (b[1].lastSeen ?? b[1].startedAt));
+  while (live.length >= MAX_SERVERS) {
+    const victim = live.shift();
+    if (!victim) break;
+    await stopDev(victim[0]);
+  }
+}
+
 async function startDev(projectId, overrideCommand) {
   const id = safeId(projectId);
   await stopDev(id);
+  await enforceServerCap(id);
   const dir = workspaceDir(id);
   if (!existsSync(dir)) await mkdir(dir, { recursive: true });
+
 
   // المشاريع المعتمدة على npm يجب أن تصبح قابلة للمعاينة دون خطوة يدوية.
   // npm install تزايدي: يعيد استخدام node_modules والحجم المخبأ في مساحة المشروع.
@@ -421,7 +491,16 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", "http://runtime");
   const path = url.pathname;
 
-  if (path === "/health") return json(res, { ok: true, servers: servers.size, at: Date.now() });
+  if (path === "/health")
+    return json(res, {
+      ok: true,
+      servers: servers.size,
+      maxServers: MAX_SERVERS,
+      heavyRunning,
+      heavyQueued: heavyQueue.length,
+      at: Date.now(),
+    });
+
 
   // المعاينة عامة (تُستهلك داخل iframe) — تُقيَّد بمعرّف المشروع فقط.
   if (path.startsWith("/p/")) {
@@ -429,8 +508,10 @@ const server = http.createServer(async (req, res) => {
     const id = safeId(projectId);
     const rest = `/${restParts.join("/")}${url.search}`;
     const entry = servers.get(id);
+    touch(id);
     if (entry && entry.port > 0 && entry.exitCode === null)
       return proxyToDev(entry, rest, req, res);
+
     return serveStatic(id, rest, res);
   }
 
@@ -467,7 +548,9 @@ const server = http.createServer(async (req, res) => {
       case "/dev/stop":
         return json(res, await stopDev(projectId));
       case "/dev/status":
+        touch(projectId);
         return json(res, devStatus(projectId));
+
       case "/dev/logs": {
         const entry = servers.get(projectId);
         return json(res, {
@@ -548,6 +631,35 @@ server.on("upgrade", (req, socket, head) => {
   socket.on("error", () => upstream.destroy());
 });
 
+// ---------------------------------------------------------------- الحاصد
+// يوقف خوادم التطوير الخاملة (ذاكرة) ويحذف مساحات العمل المهجورة (قرص).
+async function reap() {
+  const now = Date.now();
+  for (const [id, entry] of servers) {
+    if (entry.port <= 0 || entry.exitCode !== null) continue;
+    const idleMs = now - (entry.lastSeen ?? entry.startedAt);
+    if (idleMs > IDLE_STOP_MS) {
+      await stopDev(id);
+      console.log(`[runtime] أوقفت خادم ${id} بعد ${Math.round(idleMs / 60000)} دقيقة خمول.`);
+    }
+  }
+  const entries = await readdir(ROOT, { withFileTypes: true }).catch(() => []);
+  for (const dirent of entries) {
+    if (!dirent.isDirectory() || dirent.name.startsWith(".")) continue;
+    if (servers.has(dirent.name)) continue;
+    const full = join(ROOT, dirent.name);
+    const info = await stat(full).catch(() => null);
+    if (info && now - info.mtimeMs > WORKSPACE_TTL_MS) {
+      await rm(full, { recursive: true, force: true }).catch(() => {});
+      console.log(`[runtime] حذفت مساحة عمل مهجورة: ${dirent.name}`);
+    }
+  }
+}
+setInterval(() => {
+  reap().catch(() => {});
+}, 120_000).unref?.();
+
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`[runtime] يعمل على المنفذ ${PORT} — مساحات العمل في ${ROOT}`);
 });
+
