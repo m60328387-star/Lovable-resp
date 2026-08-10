@@ -76,7 +76,7 @@ export function candidatesFor(kind: TaskKind, openRouterModel?: string): Candida
     default:
       return [
         orFallback("deepseek/deepseek-chat-v3.1"),
-        orFallback("deepseek/deepseek-chat-v3.1:free"),
+        orFallback("nvidia/nemotron-3-ultra-550b-a55b:free"),
         { provider: "gemini", model: envModel("GEMINI_REASONING_MODEL", "gemini-pro-latest") },
 
         { provider: "gemini", model: envModel("GEMINI_FAST_MODEL", "gemini-flash-latest") },

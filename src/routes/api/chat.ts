@@ -848,7 +848,16 @@ export const Route = createFileRoute("/api/chat")({
               if (learned) {
                 return `رصيد OpenRouter لا يسمح بحجم الرد المطلوب. خفّضت الحدّ تلقائياً إلى ${learned} توكن — أعد الإرسال وسيكمل البناء من آخر حالة محفوظة.`;
               }
+              // OpenRouter يسحب نماذج مجانية باستمرار؛ الرسالة الخام غامضة فنترجمها.
+              const retired = /unavailable for free|use this slug instead|No endpoints found|not a valid model/i.test(message);
+              if (retired) {
+                const suggested = message.match(/use this slug instead:\s*([\w./:-]+)/i)?.[1];
+                return `النموذج المختار لم يعد متاحاً على OpenRouter${
+                  suggested ? ` (البديل المدفوع: ${suggested})` : ""
+                }. اختر نموذجاً آخر من قائمة النماذج أعلى المحادثة ثم أعد الإرسال — سيكمل البناء من آخر حالة محفوظة.`;
+              }
               return `انقطعت هذه الجولة بسبب خطأ من المزوّد: ${message}\n\nسيستأنف Weaver التنفيذ تلقائياً من آخر حالة محفوظة.`;
+
             },
           });
         } catch (error) {

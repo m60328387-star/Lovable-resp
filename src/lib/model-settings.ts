@@ -11,24 +11,19 @@ export const MODEL_OPTIONS: { id: string; label: string; note: string }[] = [
     note: "يختار OpenRouter أنسب نموذج للطلب",
   },
   {
-    id: "deepseek/deepseek-chat-v3.1:free",
-    label: "DeepSeek V3.1 — مجاني",
-    note: "مجاني بالكامل، جيد للأكواد",
+    id: "nvidia/nemotron-3-ultra-550b-a55b:free",
+    label: "Nemotron 3 Ultra — مجاني",
+    note: "أقوى نموذج مجاني، سياق مليون توكن ويدعم الأدوات",
   },
   {
-    id: "qwen/qwen3-coder:free",
-    label: "Qwen3 Coder — مجاني",
-    note: "مجاني ومتخصص بالبرمجة",
+    id: "poolside/laguna-s-2.1:free",
+    label: "Laguna S 2.1 — مجاني",
+    note: "مجاني ومتخصص بالبرمجة، سياق 262 ألف",
   },
   {
-    id: "z-ai/glm-4.5-air:free",
-    label: "GLM 4.5 Air — مجاني",
+    id: "openai/gpt-oss-20b:free",
+    label: "GPT-OSS 20B — مجاني",
     note: "مجاني وسريع للمهام العامة",
-  },
-  {
-    id: "meta-llama/llama-3.3-70b-instruct:free",
-    label: "Llama 3.3 70B — مجاني",
-    note: "مجاني، مناسب للمحادثة والتلخيص",
   },
   {
     id: "anthropic/claude-sonnet-4.6",

@@ -1,10 +1,9 @@
 /** تسعير تقريبي (دولار لكل مليون توكن) لنماذج OpenRouter الشائعة. */
 export const MODEL_PRICING: Record<string, { in: number; out: number }> = {
   "openrouter/auto": { in: 1, out: 4 },
-  "deepseek/deepseek-chat-v3.1:free": { in: 0, out: 0 },
-  "qwen/qwen3-coder:free": { in: 0, out: 0 },
-  "z-ai/glm-4.5-air:free": { in: 0, out: 0 },
-  "meta-llama/llama-3.3-70b-instruct:free": { in: 0, out: 0 },
+  "nvidia/nemotron-3-ultra-550b-a55b:free": { in: 0, out: 0 },
+  "poolside/laguna-s-2.1:free": { in: 0, out: 0 },
+  "openai/gpt-oss-20b:free": { in: 0, out: 0 },
   "anthropic/claude-sonnet-4.6": { in: 3, out: 15 },
   "anthropic/claude-opus-4.1": { in: 15, out: 75 },
   "openai/gpt-5.1": { in: 1.25, out: 10 },
