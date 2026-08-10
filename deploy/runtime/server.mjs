@@ -243,7 +243,10 @@ async function detectStart(projectId, port) {
   const flags = isVite
     ? ` -- --host 0.0.0.0 --port ${port} --strictPort --base ${base}`
     : ` -- --port ${port}`;
-  return { mode: isVite ? "vite" : "npm", command: `npm run ${script}${flags}`, base };
+  
+  // إضافة fallback لاستخدام npx عند فشل vite المباشر
+  const viteCommand = isVite ? `npx vite${flags}` : `npm run ${script}${flags}`;
+  return { mode: isVite ? "vite" : "npm", command: viteCommand, base };
 }
 
 async function stopDev(projectId) {
