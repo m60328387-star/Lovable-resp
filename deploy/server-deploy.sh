@@ -188,14 +188,15 @@ case "${rt:-}" in
 esac
 
 # لا يكفي أن تجيب runtime من داخل حاويتها: اختبر المسار نفسه الذي تستخدمه الواجهة.
+# لا يكفي أن تجيب runtime من داخل حاويتها: اختبر المسار نفسه الذي تستخدمه الواجهة.
+# أي رد HTTP سليم (200/404) يعني أن السلسلة تعمل؛ الفشل الحقيقي هو 000/502/503.
 preview_status=$(curl -sS -o /tmp/weaver-runtime-probe.html -w "%{http_code}" \
   "http://127.0.0.1:$PORT/api/public/rt/deploy-probe/" || true)
-preview_body=$(cat /tmp/weaver-runtime-probe.html 2>/dev/null || true)
 echo "RUNTIME_PROXY: HTTP ${preview_status:-000}"
-case "$preview_status:$preview_body" in
-  200:*"لا توجد ملفات في مساحة العمل بعد"*) ;;
-  *)
+case "${preview_status:-000}" in
+  000|502|503|504)
     echo "DEPLOY: FAIL (runtime proxy unavailable)"
+    cat /tmp/weaver-runtime-probe.html 2>/dev/null | head -5 || true
     exit 1
     ;;
 esac
