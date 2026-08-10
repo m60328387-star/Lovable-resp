@@ -27,7 +27,7 @@ read_env() { grep -m1 "^$1=" "$ENV_FILE" | cut -d= -f2- || true; }
 
 # Runtime أساسي للمعاينة والبناء. ولّد سراً فعلياً عند غيابه أو بقاء قيمة المثال.
 EXECUTOR_TOKEN_VALUE="$(read_env EXECUTOR_TOKEN)"
-if [ ${#EXECUTOR_TOKEN_VALUE} -lt 16 ] || [ "$EXECUTOR_TOKEN_VALUE" = "replace-with-executor-token-from-app" ]; then
+if [ ${#EXECUTOR_TOKEN_VALUE} -lt 16 ] || [ "$EXECUTOR_TOKEN_VALUE" = "replace-with-executor-token-from-app" ] || [ "$EXECUTOR_TOKEN_VALUE" = "" ]; then
   GENERATED_EXECUTOR_TOKEN="$(openssl rand -hex 32)"
   if grep -q '^EXECUTOR_TOKEN=' "$ENV_FILE"; then
     sed -i "s/^EXECUTOR_TOKEN=.*/EXECUTOR_TOKEN=$GENERATED_EXECUTOR_TOKEN/" "$ENV_FILE"
