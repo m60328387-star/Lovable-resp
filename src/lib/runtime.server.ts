@@ -4,7 +4,7 @@
  * تثبيت الحزم، تشغيل خادم تطوير، قراءة سجلّ الأخطاء، ومعاينة حيّة.
  */
 
-const DEFAULT_URL = "http://runtime:4100";
+const DEFAULT_URL = "http://127.0.0.1:4100";
 
 export function runtimeUrl() {
   return (process.env["RUNTIME_URL"] || DEFAULT_URL).replace(/\/+$/, "");
@@ -15,8 +15,7 @@ export function runtimeToken() {
 }
 
 export function runtimeConfigured() {
-  const token = runtimeToken();
-  return Boolean(token && token.length >= 16 && token !== "replace-with-executor-token-from-app");
+  return Boolean(runtimeToken() && runtimeToken().length >= 16);
 }
 
 async function call<T>(
@@ -25,7 +24,7 @@ async function call<T>(
   timeoutMs = 320_000,
 ): Promise<T> {
   if (!runtimeConfigured()) {
-    throw new Error("بيئة التنفيذ غير مهيّأة على هذا الخادم (EXECUTOR_TOKEN مفقود أو قصير أو بقيمة افتراضية).");
+    throw new Error("بيئة التنفيذ غير مهيّأة على هذا الخادم (EXECUTOR_TOKEN مفقود).");
   }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -200,10 +199,7 @@ export const browserClose = (projectId: string) =>
 export async function runtimeHealthy() {
   if (!runtimeConfigured()) return false;
   try {
-    const res = await fetch(`${runtimeUrl()}/health`, { 
-      signal: AbortSignal.timeout(4000),
-      headers: { "x-weaver-token": runtimeToken() }
-    });
+    const res = await fetch(`${runtimeUrl()}/health`, { signal: AbortSignal.timeout(4000) });
     return res.ok;
   } catch {
     return false;

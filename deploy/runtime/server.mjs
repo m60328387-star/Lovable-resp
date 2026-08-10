@@ -132,8 +132,9 @@ async function readWorkspaceFile(projectId, path) {
 
 // ---------------------------------------------------------------- exec
 
-function runCommand(projectId, command, timeoutMs) {
+async function runCommand(projectId, command, timeoutMs) {
   const dir = workspaceDir(projectId);
+  await mkdir(dir, { recursive: true });
   return new Promise((done) => {
     const started = Date.now();
     const child = exec(command, {

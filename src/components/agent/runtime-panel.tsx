@@ -11,7 +11,6 @@ import {
   stopRuntimeDev,
   syncRuntimeWorkspace,
 } from "@/lib/runtime.functions";
-import { runtimeConfigured } from "@/lib/runtime.server";
 import { cn } from "@/lib/utils";
 
 type Line = { id: number; text: string; kind: "cmd" | "out" | "err" };
@@ -132,12 +131,6 @@ export function RuntimePanel({ projectId }: { projectId: string }) {
       <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
         بيئة التنفيذ غير مفعّلة على هذه النسخة. شغّل حاوية <code dir="ltr">runtime</code> على خادمك
         عبر <code dir="ltr">deploy/deploy.sh</code> لتحصل على طرفية حقيقية ومعاينة حيّة.
-        {!runtimeConfigured() && (
-          <div className="mt-3 rounded bg-amber-50 p-2 text-xs text-amber-900">
-            <strong>ملاحظة:</strong> EXECUTOR_TOKEN غير مهيأ أو قصير جداً. تحقق من ملف deploy/.env
-            وتأكد من وجود رمز أمان بطول 32 حرفاً على الأقل.
-          </div>
-        )}
       </div>
     );
   }
