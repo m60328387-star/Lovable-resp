@@ -234,3 +234,9 @@ case "${body:-}" in
   *'"ok":true'*) echo "DEPLOY: PASS";;
   *) echo "DEPLOY: FAIL"; exit 1;;
 esac
+
+# خطّاف النشر يعمل كخدمة systemd على المضيف، وتحديثه لا يسري إلا بإعادة تشغيله.
+# نؤجّل إعادة التشغيل قليلاً حتى تنتهي هذه المهمة وتُسلَّم نتيجتها للمنصة.
+if [ "$(id -u)" = "0" ] && command -v systemctl >/dev/null 2>&1; then
+  setsid bash -c 'sleep 10; systemctl restart weaver-deploy-hook.service' >/dev/null 2>&1 < /dev/null &
+fi
