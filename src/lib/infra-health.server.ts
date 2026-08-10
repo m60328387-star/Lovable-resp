@@ -94,7 +94,11 @@ async function fetchDiag(): Promise<{ diag: HookDiag | null; error: string | nul
   }
 }
 
-function buildIncident(probes: ProbeState[], lastDeploy: DeployJobInfo | null, hookError: string | null) {
+function buildIncident(
+  probes: ProbeState[],
+  lastDeploy: DeployJobInfo | null,
+  hookError: string | null,
+) {
   const reasons: string[] = [];
   const steps: string[] = [];
 
@@ -109,11 +113,13 @@ function buildIncident(probes: ProbeState[], lastDeploy: DeployJobInfo | null, h
     if (probe.label.includes("runtime") || probe.label.includes("التنفيذ"))
       steps.push("أعد تشغيل بيئة التنفيذ: docker restart weaver-runtime");
     if (probe.label.includes("تطبيق")) steps.push("أعد تشغيل التطبيق: docker restart weaver-app");
-    if (probe.label.includes("العامل")) steps.push("أعد تشغيل العامل: docker restart weaver-worker");
+    if (probe.label.includes("العامل"))
+      steps.push("أعد تشغيل العامل: docker restart weaver-worker");
   }
   if (lastDeploy?.status === "failed") {
     reasons.push(`فشل آخر نشر (${lastDeploy.id ?? "—"})`);
-    for (const line of lastDeploy.failures.slice(-5)) reasons.push(`سطر فشل: ${line.slice(0, 200)}`);
+    for (const line of lastDeploy.failures.slice(-5))
+      reasons.push(`سطر فشل: ${line.slice(0, 200)}`);
     steps.push("راجع آخر 200 سطر أدناه، أصلح السبب، ثم أعد النشر — أو تراجع للإصدار السابق.");
   }
   if (!reasons.length) return null;
@@ -140,7 +146,9 @@ function buildReport(snapshot: Omit<InfraSnapshot, "report">): string {
     lines.push(
       `المعرّف: ${snapshot.lastDeploy.id ?? "—"} | النوع: ${snapshot.lastDeploy.action ?? "—"} | الحالة: ${snapshot.lastDeploy.status ?? "—"}`,
     );
-    lines.push(`البدء: ${snapshot.lastDeploy.startedAt ?? "—"} | الانتهاء: ${snapshot.lastDeploy.finishedAt ?? "—"}`);
+    lines.push(
+      `البدء: ${snapshot.lastDeploy.startedAt ?? "—"} | الانتهاء: ${snapshot.lastDeploy.finishedAt ?? "—"}`,
+    );
   }
   if (snapshot.incident) {
     lines.push("");
@@ -165,7 +173,9 @@ export async function infraSnapshot(): Promise<InfraSnapshot> {
     {
       ok: !error,
       label: "خطّاف النشر (deploy-hook)",
-      detail: error ? error.split("\n")[0]! : `يعمل${diag?.hook?.uptime ? ` — ${diag.hook.uptime}` : ""}`,
+      detail: error
+        ? error.split("\n")[0]!
+        : `يعمل${diag?.hook?.uptime ? ` — ${diag.hook.uptime}` : ""}`,
     },
   ];
   for (const [key, label] of Object.entries(CONTAINER_LABELS)) {

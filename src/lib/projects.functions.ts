@@ -193,15 +193,21 @@ export const saveConversation = createServerFn({ method: "POST" })
     }
 
     const ids = data.messages.map((message) => String(message.id ?? "")).filter(Boolean);
-    if (new Set(ids).size !== ids.length) throw new Error("تم إيقاف الحفظ: توجد رسائل مكررة في السجل المحلي.");
-    await sql`INSERT INTO public.message_sync_events(project_id,user_id,status,message_count,details) VALUES(${data.projectId},${context.userId},'pending',${data.messages.length},${sql.json({source:"autosave"} as never)})`;
+    if (new Set(ids).size !== ids.length)
+      throw new Error("تم إيقاف الحفظ: توجد رسائل مكررة في السجل المحلي.");
+    await sql`INSERT INTO public.message_sync_events(project_id,user_id,status,message_count,details) VALUES(${data.projectId},${context.userId},'pending',${data.messages.length},${sql.json({ source: "autosave" } as never)})`;
     try {
-      const [result] = await sql`SELECT public.save_conversation_atomic(${data.projectId},${context.userId},${sql.json(data.messages as never)}) result`;
-      await sql`INSERT INTO public.message_sync_events(project_id,user_id,status,message_count,details) VALUES(${data.projectId},${context.userId},'completed',${data.messages.length},${sql.json({result:(result as {result:unknown}).result} as never)})`;
+      const [result] =
+        await sql`SELECT public.save_conversation_atomic(${data.projectId},${context.userId},${sql.json(data.messages as never)}) result`;
+      await sql`INSERT INTO public.message_sync_events(project_id,user_id,status,message_count,details) VALUES(${data.projectId},${context.userId},'completed',${data.messages.length},${sql.json({ result: (result as { result: unknown }).result } as never)})`;
       return { ok: true, checked: true, count: data.messages.length };
     } catch (error) {
-      const reason=error instanceof Error?error.message:"unknown_sync_error";
-      console.error("[weaver:message-sync]",{projectId:data.projectId,count:data.messages.length,reason});
+      const reason = error instanceof Error ? error.message : "unknown_sync_error";
+      console.error("[weaver:message-sync]", {
+        projectId: data.projectId,
+        count: data.messages.length,
+        reason,
+      });
       await sql`INSERT INTO public.message_sync_events(project_id,user_id,status,message_count,error_code,error_message) VALUES(${data.projectId},${context.userId},'failed',${data.messages.length},'SAVE_FAILED',${reason})`;
       throw new Error(`فشل تحديث رسائل السحابة: ${reason}`);
     }

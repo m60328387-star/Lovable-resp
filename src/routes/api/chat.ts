@@ -16,9 +16,12 @@ import { estimateCostUsd } from "@/lib/pricing";
 import { DESIGN_KIT } from "@/lib/design-kit";
 import { DESIGN_LIBRARY } from "@/lib/design-library";
 import { buildProjectExecutionContext } from "@/lib/project-execution.server";
+import { buildKnowledgeContext } from "@/lib/knowledge.server";
+import { knowledgeTools } from "@/lib/agent/tools/knowledge";
 import { STACK_LIBRARY } from "@/lib/stack-library";
 import { skillPrompt } from "@/lib/skills";
 import { modePrompt } from "@/lib/modes";
+import { capabilitiesPrompt } from "@/lib/agent/capabilities";
 import { runtimeConfigured } from "@/lib/runtime.server";
 import { applyModelOverrides } from "@/lib/intel.server";
 
@@ -460,6 +463,7 @@ export function buildWeaverToolset(
   return hardenTools(
     {
       ...planningTools(auth, projectId),
+      ...knowledgeTools(auth, projectId),
       ...webTools(),
       ...intelTools(auth, projectId),
       ...workspaceTools(auth, projectId, origin),
@@ -674,17 +678,33 @@ export const Route = createFileRoute("/api/chat")({
 
         // كل قراءات التهيئة تتم على التوازي حتى لا تتراكم زمنياً قبل أول توكن
         const platformModule = await import("@/lib/platform.server");
-        const [customRows, platform, platformPrompt, executionContext] = await Promise.all([
-          auth.supabase
-            .from("custom_skills")
-            .select("slug, name, prompt")
-            .eq("enabled", true)
-            .then((r) => r.data ?? [])
-            .catch(() => []),
-          platformModule.loadPlatformSettings(),
-          platformModule.activePromptOverride(),
-          buildProjectExecutionContext(auth.supabase, projectId),
-        ]);
+        // آخر رسالة للمستخدم هي مفتاح استرجاع المعرفة السابقة ذات الصلة
+        const lastUserText = (() => {
+          const list = messages as UIMessage[];
+          for (let i = list.length - 1; i >= 0; i -= 1) {
+            const message = list[i];
+            if (message?.role !== "user") continue;
+            return (message.parts ?? [])
+              .map((part) => (part.type === "text" ? part.text : ""))
+              .join(" ")
+              .slice(0, 2000);
+          }
+          return "";
+        })();
+
+        const [customRows, platform, platformPrompt, executionContext, knowledgeContext] =
+          await Promise.all([
+            auth.supabase
+              .from("custom_skills")
+              .select("slug, name, prompt")
+              .eq("enabled", true)
+              .then((r) => r.data ?? [])
+              .catch(() => []),
+            platformModule.loadPlatformSettings(),
+            platformModule.activePromptOverride(),
+            buildProjectExecutionContext(auth.supabase, projectId),
+            buildKnowledgeContext({ userId: auth.userId, query: lastUserText }),
+          ]);
 
         // المهارات المخصّصة التي أنشأها المالك (skill-creator)
         let customPrompt = "";
@@ -730,7 +750,9 @@ export const Route = createFileRoute("/api/chat")({
                 ? `\n\nتعليمات إضافية من مالك المنصة (إلزامية):\n${platformPrompt}\n`
                 : "") +
               statusPrompt(lifecycle, buildIntent, runtimeConfigured()) +
-              executionContext,
+              capabilitiesPrompt() +
+              executionContext +
+              knowledgeContext,
 
             // ضغط سياق ذكي: يمنع انفجار حجم الطلب في المشاريع الكبيرة
             // (مخرجات أدوات ضخمة + عشرات الخطوات) وهو أهم سبب لتوقّف البناء في المنتصف.
@@ -744,6 +766,7 @@ export const Route = createFileRoute("/api/chat")({
                 ...(needs.bot ? botTools(auth, projectId, origin) : {}),
                 ...(needs.db && projectId ? targetSupabaseTools(projectId) : {}),
                 ...intelTools(auth, projectId),
+                ...knowledgeTools(auth, projectId),
                 ...(needs.connectors ? connectorTools(projectId, auth.userId) : {}),
                 ...(needs.platform ? selfTools() : {}),
                 ...(needs.platform ? platformTools(auth) : {}),
@@ -849,7 +872,10 @@ export const Route = createFileRoute("/api/chat")({
                 return `رصيد OpenRouter لا يسمح بحجم الرد المطلوب. خفّضت الحدّ تلقائياً إلى ${learned} توكن — أعد الإرسال وسيكمل البناء من آخر حالة محفوظة.`;
               }
               // OpenRouter يسحب نماذج مجانية باستمرار؛ الرسالة الخام غامضة فنترجمها.
-              const retired = /unavailable for free|use this slug instead|No endpoints found|not a valid model/i.test(message);
+              const retired =
+                /unavailable for free|use this slug instead|No endpoints found|not a valid model/i.test(
+                  message,
+                );
               if (retired) {
                 const suggested = message.match(/use this slug instead:\s*([\w./:-]+)/i)?.[1];
                 return `النموذج المختار لم يعد متاحاً على OpenRouter${
@@ -857,7 +883,6 @@ export const Route = createFileRoute("/api/chat")({
                 }. اختر نموذجاً آخر من قائمة النماذج أعلى المحادثة ثم أعد الإرسال — سيكمل البناء من آخر حالة محفوظة.`;
               }
               return `انقطعت هذه الجولة بسبب خطأ من المزوّد: ${message}\n\nسيستأنف Weaver التنفيذ تلقائياً من آخر حالة محفوظة.`;
-
             },
           });
         } catch (error) {

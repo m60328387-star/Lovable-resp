@@ -41,7 +41,9 @@ export function InfraHealthStrip() {
     <div
       className={cn(
         "rounded-lg border px-3 py-2 text-[12px]",
-        healthy ? "bg-surface/60 text-muted-foreground" : "border-destructive/40 bg-destructive/5 text-destructive",
+        healthy
+          ? "bg-surface/60 text-muted-foreground"
+          : "border-destructive/40 bg-destructive/5 text-destructive",
       )}
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -71,7 +73,10 @@ export function InfraHealthStrip() {
         >
           <RefreshCcw className={cn("size-3", isFetching && "animate-spin")} /> تحديث
         </button>
-        <Link to="/status" className="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5">
+        <Link
+          to="/status"
+          className="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5"
+        >
           <Activity className="size-3" /> صفحة الحالة
         </Link>
       </div>

@@ -1,10 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Loader2, Play, RefreshCw, ScanEye, Square, TerminalSquare, Trash2 } from "lucide-react";
+import {
+  FolderTree,
+  Loader2,
+  Play,
+  RefreshCw,
+  ScanEye,
+  Square,
+  TerminalSquare,
+  Trash2,
+} from "lucide-react";
 import {
   getRuntimeLogs,
   getRuntimeStatus,
+  listRuntimeFiles,
+  resetRuntimeWorkspace,
   runRuntimeBrowserCheck,
   runRuntimeCommand,
   startRuntimeDev,
@@ -102,6 +113,31 @@ export function RuntimePanel({ projectId }: { projectId: string }) {
     onError: (err: Error) => append(err.message, "err"),
   });
 
+  const listFiles = useMutation({
+    mutationFn: () => listRuntimeFiles({ data: { projectId } }),
+    onMutate: () => append("$ ملفات مساحة العمل الفعلية…", "cmd"),
+    onSuccess: (result) => {
+      const files = (result?.files ?? []) as { path: string; size?: number }[];
+      if (files.length === 0) append("مساحة العمل فارغة على المنفّذ.", "err");
+      for (const f of files.slice(0, 300)) {
+        append(`${f.path}${typeof f.size === "number" ? `  (${f.size}b)` : ""}`, "out");
+      }
+      if (files.length > 300) append(`… و${files.length - 300} ملفاً آخر`, "out");
+    },
+    onError: (err: Error) => append(err.message, "err"),
+  });
+
+  const reset = useMutation({
+    mutationFn: () => resetRuntimeWorkspace({ data: { projectId } }),
+    onMutate: () => append("$ تصفير مساحة العمل…", "cmd"),
+    onSuccess: () => {
+      append("تم تصفير مساحة العمل على المنفّذ — أعد المزامنة ثم التثبيت.", "out");
+      toast.success("تم تصفير مساحة العمل");
+      void status.refetch();
+    },
+    onError: (err: Error) => append(err.message, "err"),
+  });
+
   const checkBrowser = useMutation({
     mutationFn: () => runRuntimeBrowserCheck({ data: { projectId } }),
     onMutate: () => append("$ فحص المتصفح الحقيقي…", "cmd"),
@@ -187,6 +223,24 @@ export function RuntimePanel({ projectId }: { projectId: string }) {
             <ScanEye className="size-3.5" />
           )}
           فحص المتصفح
+        </button>
+        <button
+          type="button"
+          onClick={() => listFiles.mutate()}
+          disabled={listFiles.isPending}
+          className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs disabled:opacity-50"
+        >
+          <FolderTree className="size-3.5" /> ملفات المنفّذ
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (window.confirm("سيُحذف كل محتوى مساحة العمل على المنفّذ. متابعة؟")) reset.mutate();
+          }}
+          disabled={reset.isPending}
+          className="inline-flex items-center gap-1.5 rounded-md border border-destructive/40 px-3 py-1.5 text-xs text-destructive disabled:opacity-50"
+        >
+          <Trash2 className="size-3.5" /> تصفير المساحة
         </button>
         <span className="ms-auto text-[11px] text-muted-foreground">
           {dev?.running ? `يعمل • ${dev.mode ?? ""} ${dev.port ? `:${dev.port}` : ""}` : "متوقف"}

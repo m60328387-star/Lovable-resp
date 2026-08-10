@@ -139,7 +139,10 @@ function StatusPage() {
             </div>
             <ul className="divide-y">
               {data.probes.map((probe) => (
-                <li key={probe.label} className="flex flex-wrap items-center gap-2 px-4 py-2.5 text-[12px]">
+                <li
+                  key={probe.label}
+                  className="flex flex-wrap items-center gap-2 px-4 py-2.5 text-[12px]"
+                >
                   <Badge ok={probe.ok} />
                   <span className="font-medium">{probe.label}</span>
                   <span className="truncate text-muted-foreground" dir="ltr">

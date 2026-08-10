@@ -403,6 +403,25 @@ export function workspaceTools(
   }
 
   /** الكتابة الفعلية لملف واحد — يشاركها write_file و write_files. */
+  /**
+   * التقاط معرفي في الخلفية: كل ملف يُكتب بنجاح يُخزَّن في الذاكرة الدائمة
+   * ليُعاد استخدامه في أي طلب لاحق بدل إعادة كتابته من الصفر.
+   */
+  function rememberFile(path: string, content: string, summary: string) {
+    const { userId, projectId: pid } = guard();
+    void import("@/lib/knowledge.server").then(({ captureKnowledge }) =>
+      captureKnowledge({
+        userId,
+        projectId: pid,
+        kind: "file",
+        title: path,
+        path,
+        content,
+        summary,
+      }),
+    );
+  }
+
   async function writeOne(path: string, content: string, summary: string, force = false) {
     // لا نرفض الملفات الكبيرة: الرفض كان يضيّع محتوى كتبه النموذج فعلاً (يظهر في الدردشة ولا يُحفظ).
     if (content.length > 400_000) {
@@ -465,6 +484,7 @@ export function workspaceTools(
             "تم تعديل الملف من نداء آخر أثناء الكتابة. اقرأه من جديد بـ read_file ثم أعد التعديل.",
         };
       }
+      rememberFile(path, content, summary);
       return {
         ok: true,
         path,
@@ -479,6 +499,7 @@ export function workspaceTools(
       .from("files")
       .insert({ project_id: pid, user_id: userId, path, content });
     if (error) throw new Error(error.message);
+    rememberFile(path, content, summary);
     return {
       ok: true,
       path,
@@ -1126,9 +1147,38 @@ export function workspaceTools(
     },
   });
 
-  /** يضع أمراً في طابور المنفّذ وينتظر نتيجته الحقيقية. */
+  /**
+   * ينفّذ أمراً وينتظر نتيجته الحقيقية.
+   * المسار الأساسي هو وقت التشغيل الداخلي (فوري وموثوق)؛ طابور المنفّذ الخارجي
+   * بديل احتياطي فقط، وكان سابقاً يعلّق visual_audit إلى الأبد عند غياب المنفّذ.
+   */
   const queueCommand = async (command: string, reason: string, waitSeconds: number) => {
     const { supabase, userId, projectId: pid } = guard();
+
+    if (runtimeConfigured()) {
+      const result = await runtimeExec(pid, command, Math.max(waitSeconds, 30) * 1000);
+      const status = result.ok ? "success" : "failed";
+      const { data: direct } = await supabase
+        .from("runs")
+        .insert({
+          project_id: pid,
+          user_id: userId,
+          kind: "command",
+          input: { command, reason },
+          status,
+          exit_code: result.exitCode,
+          output: result.output.slice(-60_000),
+        })
+        .select("id")
+        .maybeSingle();
+      return {
+        runId: direct?.id ?? null,
+        status,
+        exitCode: result.exitCode,
+        output: result.output.slice(-8000),
+      };
+    }
+
     const { data: run, error } = await supabase
       .from("runs")
       .insert({

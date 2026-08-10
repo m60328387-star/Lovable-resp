@@ -1,11 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Globe, Loader2, Lock, MousePointerClick, Power, RefreshCw } from "lucide-react";
+import {
+  ArrowLeft,
+  FileText,
+  Globe,
+  Loader2,
+  Lock,
+  MousePointerClick,
+  Power,
+  RefreshCw,
+} from "lucide-react";
 import {
   closeBrowserSession,
   getBrowserFrame,
   openBrowserSession,
+  readBrowserPage,
   sendBrowserInput,
 } from "@/lib/browser.functions";
 import { cn } from "@/lib/utils";
@@ -19,6 +29,7 @@ export function BrowserPanel({ projectId }: { projectId: string }) {
   const [live, setLive] = useState(false);
   const [address, setAddress] = useState("https://ads.google.com");
   const [typing, setTyping] = useState("");
+  const [pageText, setPageText] = useState<string | null>(null);
   const imgRef = useRef<HTMLImageElement>(null);
 
   const frame = useQuery({
@@ -51,6 +62,16 @@ export function BrowserPanel({ projectId }: { projectId: string }) {
     },
   });
 
+  const readPage = useMutation({
+    mutationFn: () => readBrowserPage({ data: { projectId } }),
+    onSuccess: (result) => {
+      const r = result as { title?: string; url?: string; text?: string };
+      setPageText([r.title, r.url, "", (r.text ?? "").slice(0, 8000)].filter(Boolean).join("\n"));
+      toast.success("تمت قراءة محتوى الصفحة");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   const input = useMutation({
     mutationFn: (payload: Record<string, unknown>) =>
       sendBrowserInput({ data: { projectId, ...payload } as never }),
@@ -68,7 +89,7 @@ export function BrowserPanel({ projectId }: { projectId: string }) {
     input.mutate({ kind: "click", x, y });
   };
 
-  const busy = open.isPending || close.isPending || input.isPending;
+  const busy = open.isPending || close.isPending || input.isPending || readPage.isPending;
 
   return (
     <div className="flex h-full flex-col gap-3 p-3" dir="rtl">
@@ -126,7 +147,38 @@ export function BrowserPanel({ projectId }: { projectId: string }) {
         >
           <RefreshCw className={cn("size-3.5", frame.isFetching && "animate-spin")} />
         </button>
+        <button
+          type="button"
+          disabled={!live || readPage.isPending}
+          onClick={() => readPage.mutate()}
+          className="rounded-md border border-border p-1.5 text-muted-foreground hover:text-foreground disabled:opacity-40"
+          title="قراءة نص الصفحة"
+        >
+          {readPage.isPending ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <FileText className="size-3.5" />
+          )}
+        </button>
       </div>
+
+      {pageText !== null && (
+        <div className="rounded-lg border border-border bg-card">
+          <div className="flex items-center justify-between border-b px-3 py-1.5 text-[11px]">
+            <span>نص الصفحة المقروء</span>
+            <button
+              type="button"
+              onClick={() => setPageText(null)}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              إغلاق
+            </button>
+          </div>
+          <pre className="max-h-48 overflow-auto whitespace-pre-wrap p-3 text-[11px] leading-relaxed">
+            {pageText}
+          </pre>
+        </div>
+      )}
 
       <div className="relative flex-1 overflow-auto rounded-lg border border-border bg-muted/30">
         {!live ? (

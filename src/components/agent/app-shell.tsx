@@ -232,7 +232,6 @@ export function AppShell({
             <HeartPulse className="size-3.5" />
           </Link>
 
-
           <Link
             to="/connectors"
             aria-label="الروابط الخارجية"

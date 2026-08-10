@@ -32,8 +32,6 @@ export const TOOL_LABELS: Record<string, string> = {
   copy_audit: "تدقيق النصوص",
   design_directions: "اقتراح الاتجاهات البصرية",
 
-
-
   seo_kit: "تحسين محركات البحث",
   stack_plan: "اختيار المنظومة التقنية",
   promote_build: "ترقية البناء",

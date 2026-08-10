@@ -32,7 +32,7 @@ import { DomainCard } from "@/components/agent/domain-card";
 
 import { importWorkspaceFiles } from "@/lib/import.functions";
 import { getConversation, getWorkspace } from "@/lib/projects.functions";
-import { getPublishState, publishProject } from "@/lib/publish.functions";
+import { getPublishState, publishProject, unpublishProject } from "@/lib/publish.functions";
 import { getUsage } from "@/lib/usage.functions";
 import { getSiteAnalytics } from "@/lib/analytics.functions";
 import { listFileVersions, restoreFileVersion } from "@/lib/files.functions";
@@ -390,6 +390,21 @@ export function ProjectPanel({
     }
   };
 
+  const [unpublishing, setUnpublishing] = useState(false);
+  const unpublish = async () => {
+    if (!window.confirm("سيتوقف الرابط المباشر عن العمل. متابعة؟")) return;
+    setUnpublishing(true);
+    try {
+      await unpublishProject({ data: { projectId } });
+      await publishState.refetch();
+      toast.success("تم إلغاء النشر");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "فشل إلغاء النشر");
+    } finally {
+      setUnpublishing(false);
+    }
+  };
+
   const openPreviewWindow = () => {
     if (!previewDoc) return;
     const blob = new Blob([previewDoc], { type: "text/html" });
@@ -660,6 +675,16 @@ export function ProjectPanel({
                     <ExternalLink className="size-3" />
                     الرابط المباشر
                   </a>
+                )}
+                {liveUrl && (
+                  <button
+                    type="button"
+                    onClick={() => void unpublish()}
+                    disabled={unpublishing}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-destructive/40 bg-card px-2.5 py-1.5 text-[11px] font-semibold text-destructive hover:bg-surface disabled:opacity-60"
+                  >
+                    {unpublishing ? "يلغي…" : "إلغاء النشر"}
+                  </button>
                 )}
               </div>
 

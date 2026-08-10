@@ -173,7 +173,6 @@ export type DeployResult = {
   jobId?: string;
 };
 
-
 /**
  * ينفّذ النشر على الخادم عبر خطّاف النشر (webhook) الذي يشغّل deploy/deploy.sh.
  * يُضبط برابط PLATFORM_DEPLOY_URL ورمز EXECUTOR_TOKEN على الـVPS.

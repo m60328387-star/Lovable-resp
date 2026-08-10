@@ -9,6 +9,7 @@ import { makeLocalSupabase } from "@/lib/local-supabase";
 import { estimateCostUsd } from "@/lib/pricing";
 import { withTokenBudget } from "@/lib/token-budget.server";
 import { buildProjectExecutionContext } from "@/lib/project-execution.server";
+import { buildKnowledgeContext } from "@/lib/knowledge.server";
 import {
   buildWeaverSystem,
   buildWeaverToolset,
@@ -164,6 +165,20 @@ export const Route = createFileRoute("/api/public/worker/tick")({
             },
           );
           const executionContext = await buildProjectExecutionContext(supabase, projectId);
+          // نفس الذاكرة المعرفية المتاحة في المحادثة تتاح للعامل الخلفي
+          const knowledgeContext = await buildKnowledgeContext({
+            userId: job.user_id,
+            query: ((job.messages ?? []) as UIMessage[])
+              .filter((message) => message.role === "user")
+              .slice(-1)
+              .map((message) =>
+                (message.parts ?? [])
+                  .map((part) => (part.type === "text" ? part.text : ""))
+                  .join(" "),
+              )
+              .join(" ")
+              .slice(0, 2000),
+          });
 
           const result = await withTokenBudget(async (maxOutputTokens) =>
             generateText({
@@ -171,7 +186,8 @@ export const Route = createFileRoute("/api/public/worker/tick")({
               system:
                 buildWeaverSystem(skills, job.mode) +
                 statusPrompt(lifecycle, buildIntent) +
-                executionContext,
+                executionContext +
+                knowledgeContext,
               messages: await convertToModelMessages(
                 compactMessages((job.messages ?? []) as UIMessage[]),
               ),
@@ -208,7 +224,7 @@ export const Route = createFileRoute("/api/public/worker/tick")({
           // إلحاق ردّ المساعد بالمحادثة حتى يراه المستخدم عند العودة
           if (projectId && result.text.trim()) {
             try {
-              await sql`SELECT public.append_message_atomic(${projectId},${job.user_id},${sql.json({id:`bg-${job.id}`,role:"assistant",parts:[{type:"text",text:result.text}]} as never)})`;
+              await sql`SELECT public.append_message_atomic(${projectId},${job.user_id},${sql.json({ id: `bg-${job.id}`, role: "assistant", parts: [{ type: "text", text: result.text }] } as never)})`;
             } catch (error) {
               console.error("[weaver:worker:persist]", error);
             }
