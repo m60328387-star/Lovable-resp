@@ -5,14 +5,7 @@
  */
 
 export type StackKind =
-  | "landing"
-  | "marketing"
-  | "dashboard"
-  | "saas"
-  | "ecommerce"
-  | "api"
-  | "realtime"
-  | "content";
+  "landing" | "marketing" | "dashboard" | "saas" | "ecommerce" | "api" | "realtime" | "content";
 
 export type StackPlan = {
   kind: StackKind;
@@ -108,7 +101,12 @@ export const STACK_PLANS: Record<StackKind, StackPlan> = {
     kind: "saas",
     title: "منتج SaaS متكامل (مصادقة + اشتراكات + متعدّد المستأجرين)",
     runtime: ["Vite + React + TS للواجهة", "Node/Hono أو Supabase للخلفية"],
-    ui: ["Tailwind + Radix", "TanStack Query/Table", "react-hook-form + zod", "i18next للتعدّد اللغوي"],
+    ui: [
+      "Tailwind + Radix",
+      "TanStack Query/Table",
+      "react-hook-form + zod",
+      "i18next للتعدّد اللغوي",
+    ],
     data: [
       "Postgres + RLS (عزل المستأجر إلزامي)",
       "Drizzle ORM أو Prisma للمخطط والهجرات",
@@ -143,7 +141,11 @@ export const STACK_PLANS: Record<StackKind, StackPlan> = {
       "Stripe/Paddle/Tap للدفع + webhook للتأكيد",
       "سلة في localStorage + مزامنة بالخادم عند تسجيل الدخول",
     ],
-    quality: [...BASE_QUALITY, "Schema.org Product + Offer + BreadcrumbList", "اختبار e2e لمسار الشراء"],
+    quality: [
+      ...BASE_QUALITY,
+      "Schema.org Product + Offer + BreadcrumbList",
+      "اختبار e2e لمسار الشراء",
+    ],
     scaffold: [
       ...BASE_SCAFFOLD,
       "npm i @tanstack/react-query zustand zod react-hook-form embla-carousel-react fuse.js",
@@ -181,7 +183,10 @@ export const STACK_PLANS: Record<StackKind, StackPlan> = {
     ui: ["TanStack Query + اشتراك لحظي", "Yjs للتحرير التشاركي", "TanStack Virtual للرسائل"],
     data: ["Postgres + قنوات realtime", "تفاؤلي في الواجهة مع مصالحة عند الرد"],
     quality: [...BASE_QUALITY, "إعادة اتصال تلقائية مع backoff", "اختبار انقطاع الشبكة"],
-    scaffold: [...BASE_SCAFFOLD, "npm i @tanstack/react-query @tanstack/react-virtual yjs y-websocket"],
+    scaffold: [
+      ...BASE_SCAFFOLD,
+      "npm i @tanstack/react-query @tanstack/react-virtual yjs y-websocket",
+    ],
     structure: BASE_STRUCTURE,
     notes: ["حدّ رسائل لكل مستخدم", "لا تثق بالعميل في الترتيب — الخادم مصدر الحقيقة"],
   },

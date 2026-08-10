@@ -69,16 +69,17 @@ export const publishProject = createServerFn({ method: "POST" })
     if (!workspace.some((file) => file.path === "index.html")) {
       throw new Error("لا يوجد index.html — لا يمكن نشر موقع بلا صفحة دخول.");
     }
-    const report = runChecks(workspace);
-    if (!report.ok) throw new Error(`فشل فحص الجودة: ${report.summary}`);
-    const latestCheck = await sql`
-      SELECT status FROM public.runs
-      WHERE project_id = ${data.projectId} AND kind = 'check'
-      ORDER BY created_at DESC LIMIT 1
-    `;
-    if ((latestCheck[0] as unknown as { status?: string } | undefined)?.status !== "passed") {
-      throw new Error("نفّذ فحص الجودة بنجاح قبل النشر.");
+    const styles = workspace.find((f) => f.path.endsWith("styles.css"));
+    if (styles && styles.content.trim().length < 400) {
+      throw new Error("ملف الأنماط شبه فارغ — أكمل التصميم قبل النشر.");
     }
+    // الفحص يجري على الملفات الحالية لحظة النشر (لا نعتمد على فحص قديم قد يسبق تعديلات).
+    const report = runChecks(workspace);
+    await sql`
+      INSERT INTO public.runs (project_id, kind, status, output)
+      VALUES (${data.projectId}, 'check', ${report.ok ? "passed" : "failed"}, ${report.summary})
+    `.catch(() => undefined);
+    if (!report.ok) throw new Error(`فشل فحص الجودة: ${report.summary}`);
 
     const slug = data.slug ? slugify(data.slug) : (existingSlug ?? slugify(title));
     for (let i = 0; i < 25; i++) {

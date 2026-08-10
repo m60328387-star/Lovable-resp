@@ -58,6 +58,22 @@ export const Route = createFileRoute("/api/public/health")({
         const noProvider = !providers.openrouter && !providers.gemini && !providers.groq;
         if (noProvider) missing.push("MODEL_PROVIDER(none_configured)");
 
+        // قدرات اختيارية: أدوات تعمل فقط عند توفّر مفاتيحها (تظهر هنا بدل أن تفشل صامتة).
+        const capabilities = {
+          executor: Boolean((process.env["EXECUTOR_TOKEN"] ?? "").trim()),
+          runtime: Boolean((process.env["RUNTIME_URL"] ?? "").trim()),
+          selfRepo: Boolean(
+            (process.env["GITHUB_TOKEN"] ?? "").trim() &&
+            (process.env["GITHUB_REPO_URL"] ?? "").trim(),
+          ),
+          deployHook: Boolean((process.env["PLATFORM_DEPLOY_URL"] ?? "").trim()),
+          imageGen: Boolean((process.env["GEMINI_API_KEY"] ?? "").trim()),
+          webSearch: Boolean((process.env["BRAVE_API_KEY"] ?? "").trim()),
+        };
+        const disabledTools = Object.entries(capabilities)
+          .filter(([, on]) => !on)
+          .map(([name]) => name);
+
         const ok = db && missing.length === 0;
         if (!ok) {
           try {
@@ -76,7 +92,13 @@ export const Route = createFileRoute("/api/public/health")({
             dbError,
             missingEnv: missing,
             providers,
-            backup: { at: backupAt, ageHours: backupAgeHours, stale: backupAgeHours === null || backupAgeHours > 48 },
+            capabilities,
+            disabledTools,
+            backup: {
+              at: backupAt,
+              ageHours: backupAgeHours,
+              stale: backupAgeHours === null || backupAgeHours > 48,
+            },
             model: process.env["OPENROUTER_MODEL"] ?? null,
             uptimeSec: Math.round(process.uptime?.() ?? 0),
             at: new Date().toISOString(),

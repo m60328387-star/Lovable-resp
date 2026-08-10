@@ -125,7 +125,7 @@ export const approvePlatformChange = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { getSql } = await import("@/lib/db");
     const { ensurePlatformTables, isSensitivePath } = await import("@/lib/platform.server");
-    const { getSelfRepo, selfWrite } = await import("@/lib/self-repo.server");
+    const { getSelfRepo, selfWriteMany } = await import("@/lib/self-repo.server");
     await ensurePlatformTables();
     const sql = getSql();
     const rows = await sql`
@@ -146,15 +146,12 @@ export const approvePlatformChange = createServerFn({ method: "POST" })
 
     const commits: string[] = [];
     try {
-      for (const f of files) {
-        const out = await selfWrite(
-          repo,
-          f.path,
-          f.after,
-          `Weaver: ${String(row["title"])} — ${f.path}`,
-        );
-        commits.push(`${f.path}@${out.commit}`);
-      }
+      const out = await selfWriteMany(
+        repo,
+        files.map((f) => ({ path: f.path, content: f.after })),
+        `Weaver: ${String(row["title"])}`,
+      );
+      commits.push(...out.paths.map((p) => `${p}@${out.commit}`));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await sql`
@@ -225,9 +222,10 @@ export const deployPlatform = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    const { runDeployHook, recordDeploy } = await import("@/lib/platform.server");
+    const { deployWithGuard, runDeployHook, recordDeploy } = await import("@/lib/platform.server");
     const action = data.action ?? "deploy";
-    const result = await runDeployHook(action, data.ref);
+    // النشر يمرّ عبر الحارس: فحص صحي بعد النشر وتراجع تلقائي عند الفشل.
+    const result = data.ref ? await runDeployHook(action, data.ref) : await deployWithGuard(action);
     await recordDeploy(context.userId, action, result);
     return result;
   });

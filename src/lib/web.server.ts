@@ -96,15 +96,18 @@ async function ddgSearch(query: string, limit: number): Promise<SearchResult[]> 
 
 export async function webSearch(query: string, limit = 6): Promise<SearchResult[]> {
   const max = Math.min(Math.max(limit || 6, 1), 10);
+  const failures: string[] = [];
   for (const engine of [braveSearch, ddgSearch]) {
     try {
       const results = await engine(query, max);
       if (results.length > 0) return results;
-    } catch {
-      // نجرّب المحرك التالي
+      failures.push(`${engine.name}: بلا نتائج`);
+    } catch (error) {
+      failures.push(`${engine.name}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  return [];
+  // نُظهر السبب بدل إرجاع قائمة فارغة صامتة تُربك الوكيل.
+  throw new Error(`فشل البحث في الويب — ${failures.join(" | ")}`);
 }
 
 export async function webFetch(url: string, maxChars = 12000) {

@@ -220,7 +220,6 @@ export async function runDeployHook(
       };
     }
     return { ok: res.ok, status: res.status, log: response.slice(0, 20000) };
-
   } catch (error) {
     return { ok: false, status: 0, log: error instanceof Error ? error.message : String(error) };
   }
@@ -375,7 +374,11 @@ export async function verifyDeployHealth(
       if (res.ok) return { ok: true, status: res.status, detail: body };
       last = { ok: false, status: res.status, detail: body };
     } catch (error) {
-      last = { ok: false, status: 0, detail: error instanceof Error ? error.message : String(error) };
+      last = {
+        ok: false,
+        status: 0,
+        detail: error instanceof Error ? error.message : String(error),
+      };
     }
     await new Promise((r) => setTimeout(r, delayMs));
   }
@@ -383,7 +386,9 @@ export async function verifyDeployHealth(
 }
 
 /** ينشر ثم يتحقق صحياً، ويتراجع تلقائياً عند فشل الفحص. */
-export async function deployWithGuard(action: "deploy" | "rollback"): Promise<
+export async function deployWithGuard(
+  action: "deploy" | "rollback",
+): Promise<
   DeployResult & { health?: { ok: boolean; status: number; detail: string }; rolledBack?: boolean }
 > {
   const result = await runDeployHook(action);

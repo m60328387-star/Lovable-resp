@@ -337,12 +337,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 `;
 
-function themedFiles(
-  title: string,
-  palette: keyof typeof PALETTES,
-  pattern: string,
-  body: string,
-) {
+function themedFiles(title: string, palette: keyof typeof PALETTES, pattern: string, body: string) {
   return [
     { path: "index.html", content: page(title, `${SPRITE}\n${body}`) },
     { path: "styles.css", content: themedCss(palette, pattern) },
@@ -441,4 +436,3 @@ STARTER_TEMPLATES.push(
     files: themedFiles("مؤتمر — Weaver", "ocean", MESH, EVENT_BODY),
   },
 );
-

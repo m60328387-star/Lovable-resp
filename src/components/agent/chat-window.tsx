@@ -50,6 +50,11 @@ import { enqueueAgentJob } from "@/lib/agent-jobs.functions";
 import { toolDetail, toolFailed, toolLabel } from "@/lib/tool-display";
 import { pushTerminalEvent } from "@/lib/terminal-bus";
 import { ResizeHandle, useResizablePanel } from "@/components/agent/split-pane";
+import {
+  AskUserCard,
+  type AskAttachment,
+  type AskUserPayload,
+} from "@/components/agent/ask-user-card";
 import { cn } from "@/lib/utils";
 
 type Attachment = { filename: string; mediaType: string; url: string };
@@ -130,7 +135,17 @@ function ReasoningBlock({ text, streaming }: { text: string; streaming: boolean 
   );
 }
 
-function MessageParts({ message }: { message: UIMessage }) {
+function MessageParts({
+  message,
+  projectId,
+  busy,
+  onAnswer,
+}: {
+  message: UIMessage;
+  projectId: string;
+  busy: boolean;
+  onAnswer: (text: string, files: AskAttachment[]) => void;
+}) {
   const parts = (Array.isArray(message.parts) ? message.parts : []) as unknown as AnyPart[];
   const updates: Record<string, TaskUpdate> = {};
   for (const part of parts) {
@@ -189,6 +204,18 @@ function MessageParts({ message }: { message: UIMessage }) {
           if (!part["output"]) return <ToolPending key={i} label="يبني رسم المهام…" />;
           const payload = part["output"] as { tasks: TaskNode[] };
           return <TaskGraphCard key={i} tasks={payload.tasks ?? []} updates={updates} />;
+        }
+        if (part.type === "tool-ask_user") {
+          if (!part["output"]) return <ToolPending key={i} label="يُجهّز أسئلة ضرورية…" />;
+          return (
+            <AskUserCard
+              key={i}
+              payload={part["output"] as AskUserPayload}
+              projectId={projectId}
+              disabled={busy}
+              onAnswer={onAnswer}
+            />
+          );
         }
         if (part.type === "tool-write_file") {
           if (!part["output"]) return <ToolPending key={i} label="يكتب ملفاً في مساحة العمل…" />;
@@ -515,6 +542,17 @@ function ChatSurface({
         /(?:اكتب\s+[«"]?أكمل|أحتاج\s+(?:إلى\s+)?مراجعة|بانتظار\s+(?:المراجعة|الموافقة)|سأكمل\s+لاحق)/i.test(
           assistantText,
         );
+      const awaitingAnswer = ((message.parts ?? []) as AnyPart[]).some(
+        (part) =>
+          part.type === "tool-ask_user" &&
+          (part["output"] as { awaiting?: boolean } | undefined)?.awaiting,
+      );
+      if (awaitingAnswer) {
+        autoRunsRef.current = 0;
+        setPendingContinue(false);
+        toast.info("الوكيل بانتظار إجابتك لإكمال البناء.");
+        return;
+      }
       if (meta?.complete) {
         autoRunsRef.current = 0;
         setPendingContinue(false);
@@ -652,6 +690,18 @@ function ChatSurface({
     ],
   );
 
+  // إرسال إجابات بطاقة الأسئلة (مع الصور المرفقة) لاستئناف البناء فوراً
+  const answerAsk = useCallback(
+    (text: string, files: AskAttachment[]) => {
+      if (isBusy) return;
+      void sendMessage(
+        { text, ...(files.length > 0 ? { files } : {}) },
+        { body: { model, skills, mode } },
+      );
+    },
+    [isBusy, mode, model, sendMessage, skills],
+  );
+
   // استئناف تلقائي بعد توقّف الجولة على حد الخطوات/الوقت
   useEffect(() => {
     if (!pendingContinue || isBusy) return;
@@ -730,7 +780,12 @@ function ChatSurface({
                         Weaver
                       </span>
                     </div>
-                    <MessageParts message={message} />
+                    <MessageParts
+                      message={message}
+                      projectId={threadId}
+                      busy={isBusy}
+                      onAnswer={answerAsk}
+                    />
                   </div>
                 )}
               </div>

@@ -158,7 +158,11 @@ export function AppShell({
                             : "bg-primary/15 text-primary",
                       )}
                     >
-                      {project.status === "done" ? "مكتمل" : project.status === "blocked" ? "متوقف" : "يعمل"}
+                      {project.status === "done"
+                        ? "مكتمل"
+                        : project.status === "blocked"
+                          ? "متوقف"
+                          : "يعمل"}
                     </span>
                   </div>
                   <div className="mt-1.5 flex items-center justify-between">

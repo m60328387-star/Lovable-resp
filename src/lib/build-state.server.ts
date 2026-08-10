@@ -28,8 +28,22 @@ export type BuildState = {
   startedAt?: string | undefined;
   updatedAt?: string | undefined;
   completedSteps: string[];
-  currentTask?: { key: string; title: string; status: "pending" | "running" | "done" | "failed"; attempt: number } | undefined;
-  stats?: { filesWritten: number; checksPassed: number; checksFailed: number; costEstimateUsd?: number | undefined } | undefined;
+  currentTask?:
+    | {
+        key: string;
+        title: string;
+        status: "pending" | "running" | "done" | "failed";
+        attempt: number;
+      }
+    | undefined;
+  stats?:
+    | {
+        filesWritten: number;
+        checksPassed: number;
+        checksFailed: number;
+        costEstimateUsd?: number | undefined;
+      }
+    | undefined;
   meta?: Record<string, unknown> | undefined;
 };
 
@@ -92,9 +106,7 @@ export async function loadBuildState(projectId: string): Promise<BuildState> {
   if (!row) return defaultBuildState("intake");
 
   const raw = row.build_state;
-  const state = isBuildState(raw)
-    ? raw
-    : defaultBuildState((row.status as BuildPhase) ?? "intake");
+  const state = isBuildState(raw) ? raw : defaultBuildState((row.status as BuildPhase) ?? "intake");
 
   return {
     ...state,
@@ -122,7 +134,7 @@ export async function saveBuildState(
   await sql`
     UPDATE public.projects
     SET build_state = ${sql.json(merged as never)},
-        next_action = ${nextAction ?? current.phase === "done" ? "done" : null},
+        next_action = ${(nextAction ?? current.phase === "done") ? "done" : null},
         last_error = ${error ?? null},
         build_progress = ${progress},
         updated_at = now()
@@ -168,12 +180,7 @@ export async function markStepCompleted(
 ): Promise<BuildState> {
   const current = await loadBuildState(projectId);
   const completed = new Set([...current.completedSteps, step]);
-  return saveBuildState(
-    projectId,
-    { completedSteps: Array.from(completed) },
-    nextAction,
-    null,
-  );
+  return saveBuildState(projectId, { completedSteps: Array.from(completed) }, nextAction, null);
 }
 
 export async function setCurrentTask(
@@ -183,10 +190,7 @@ export async function setCurrentTask(
   return saveBuildState(projectId, { currentTask: task ?? undefined });
 }
 
-export async function saveCheckResult(
-  projectId: string,
-  result: CheckResult,
-): Promise<void> {
+export async function saveCheckResult(projectId: string, result: CheckResult): Promise<void> {
   const sql = getSql();
   await sql`
     UPDATE public.projects
@@ -196,10 +200,7 @@ export async function saveCheckResult(
   `;
 }
 
-export async function setDeployedUrl(
-  projectId: string,
-  url: string | null,
-): Promise<void> {
+export async function setDeployedUrl(projectId: string, url: string | null): Promise<void> {
   const sql = getSql();
   await sql`
     UPDATE public.projects

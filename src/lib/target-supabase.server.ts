@@ -44,7 +44,7 @@ async function localRpc(fn: string, args: Record<string, unknown>) {
   const queryParams: unknown[] = [];
   const argList = keys.map((k) => `${qid(k)} => ${litParam(args[k], queryParams)}`).join(", ");
   const query = `SELECT public.${qid(fn)}(${argList}) as result`;
-  const rows = (await sql.unsafe(query, queryParams as any)) as { result: any }[];
+  const rows = (await sql.unsafe(query, queryParams as never)) as { result: unknown }[];
   return rows[0]?.result ?? null;
 }
 

@@ -92,8 +92,14 @@ async function serveSiteInner(splat: string, request?: Request): Promise<Respons
     .maybeSingle();
   if (!project || !project.published) return notFoundResponse();
 
+  // لا نُرجع الصفحة الرئيسية بدل ملف أصول مفقود (يخفي الروابط المكسورة).
+  const isAsset = /\.[a-z0-9]{2,5}$/i.test(path) && !/\.html?$/i.test(path);
   const candidates = Array.from(
-    new Set([path, path.replace(/^\/+/, ""), `${path}/index.html`, "index.html"]),
+    new Set(
+      [path, path.replace(/^\/+/, ""), `${path}/index.html`, isAsset ? null : "index.html"].filter(
+        (c): c is string => Boolean(c),
+      ),
+    ),
   );
   const { data: files } = await supabase
     .from("files")
@@ -101,7 +107,9 @@ async function serveSiteInner(splat: string, request?: Request): Promise<Respons
     .eq("project_id", project.id)
     .in("path", candidates);
 
-  const byPath = new Map(((files as any[]) ?? []).map((f: any) => [f.path, f.content]));
+  const byPath = new Map(
+    ((files as Array<{ path: string; content: string }>) ?? []).map((f) => [f.path, f.content]),
+  );
   const hit = candidates.find((c) => byPath.has(c));
   if (!hit) return notFoundResponse();
 

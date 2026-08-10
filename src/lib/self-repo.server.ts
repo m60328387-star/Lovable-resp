@@ -170,6 +170,59 @@ export async function selfSearch(
   return { query, hits };
 }
 
+/** يزيل النصوص والتعليقات حتى لا تُحسب الأقواس داخلها خطأً. */
+function stripLiterals(src: string): string {
+  let out = "";
+  let i = 0;
+  const n = src.length;
+  while (i < n) {
+    const ch = src[i];
+    const next = src[i + 1];
+    if (ch === "/" && next === "/") {
+      while (i < n && src[i] !== "\n") i += 1;
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      i += 2;
+      while (i < n && !(src[i] === "*" && src[i + 1] === "/")) i += 1;
+      i += 2;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") {
+      const quote = ch;
+      i += 1;
+      while (i < n) {
+        if (src[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        if (src[i] === quote) {
+          i += 1;
+          break;
+        }
+        if (quote === "`" && src[i] === "$" && src[i + 1] === "{") {
+          let depth = 1;
+          out += "${";
+          i += 2;
+          while (i < n && depth > 0) {
+            if (src[i] === "{") depth += 1;
+            if (src[i] === "}") depth -= 1;
+            out += src[i];
+            i += 1;
+          }
+          continue;
+        }
+        i += 1;
+      }
+      out += '""';
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+}
+
 /** بوابة ما قبل الالتزام: فحوص سلامة أساسية تمنع كسر المنصة. */
 export function validateSelfSource(path: string, content: string): string[] {
   const problems: string[] = [];
@@ -177,15 +230,16 @@ export function validateSelfSource(path: string, content: string): string[] {
   if (/<<<<<<<|>>>>>>>|^={7}$/m.test(content)) problems.push("يحتوي علامات دمج غير محلولة");
   if (/\.\.\.\s*(keep existing code|بقية الملف|إلخ)/i.test(content))
     problems.push("يحتوي محتوى مختصر بدل الكود الكامل");
-  if (/\.(ts|tsx|js|jsx|css|json)$/i.test(path)) {
+  if (/\.(ts|tsx|js|jsx|mjs|cjs|css|json)$/i.test(path)) {
+    const bare = /\.(css|json)$/i.test(path) ? content : stripLiterals(content);
     const pairs: [string, string][] = [
       ["{", "}"],
       ["(", ")"],
       ["[", "]"],
     ];
     for (const [open, close] of pairs) {
-      const o = content.split(open).length - 1;
-      const c = content.split(close).length - 1;
+      const o = bare.split(open).length - 1;
+      const c = bare.split(close).length - 1;
       if (o !== c) problems.push(`أقواس غير متوازنة ${open}${close} (${o}/${c})`);
     }
   }
@@ -202,8 +256,77 @@ export function validateSelfSource(path: string, content: string): string[] {
     );
     const dup = imports.filter((s, i) => imports.indexOf(s) !== i);
     if (dup.length) problems.push(`استيراد مكرر: ${[...new Set(dup)].join(", ")}`);
+    if (
+      /^src\/routes\//.test(path) &&
+      !/createFileRoute|createRootRoute|createServerFileRoute/.test(content)
+    )
+      problems.push("ملف مسار بلا createFileRoute — سيكسر التوجيه");
   }
+  if (/\.(sh|mjs)$/i.test(path) && /\r\n/.test(content))
+    problems.push("نهايات أسطر CRLF في سكربت تنفيذي");
   return problems;
+}
+
+/**
+ * التزام ذرّي متعدد الملفات عبر Git Data API:
+ * إمّا تُطبَّق كل الملفات في كوميت واحد أو لا يتغيّر شيء.
+ */
+export async function selfWriteMany(
+  repoCfg: SelfRepo,
+  files: { path: string; content: string }[],
+  message: string,
+): Promise<{ commit: string; branch: string; paths: string[] }> {
+  if (!files.length) throw new Error("لا توجد ملفات للالتزام");
+  const prepared = files.map((f) => {
+    const clean = assertAllowed(f.path);
+    const problems = validateSelfSource(clean, f.content);
+    if (problems.length) throw new Error(`رُفض ${clean}: ${problems.join(" | ")}`);
+    return { path: clean, content: f.content };
+  });
+
+  const { token, owner, repo } = repoCfg;
+  const branch = await selfBranch(repoCfg);
+  const refRes = await gh(token, `/repos/${owner}/${repo}/git/ref/heads/${branch}`);
+  if (!refRes.ok) throw new Error(`تعذّر قراءة المرجع [${refRes.status}]`);
+  const ref = (await refRes.json()) as { object: { sha: string } };
+  const baseSha = ref.object.sha;
+
+  const commitRes = await gh(token, `/repos/${owner}/${repo}/git/commits/${baseSha}`);
+  if (!commitRes.ok) throw new Error(`تعذّر قراءة الكوميت [${commitRes.status}]`);
+  const baseCommit = (await commitRes.json()) as { tree: { sha: string } };
+
+  const blobs: { path: string; mode: "100644"; type: "blob"; sha: string }[] = [];
+  for (const f of prepared) {
+    const blobRes = await gh(token, `/repos/${owner}/${repo}/git/blobs`, {
+      method: "POST",
+      body: { content: toBase64(f.content), encoding: "base64" },
+    });
+    if (!blobRes.ok) throw new Error(`فشل رفع ${f.path} [${blobRes.status}]`);
+    const blob = (await blobRes.json()) as { sha: string };
+    blobs.push({ path: f.path, mode: "100644", type: "blob", sha: blob.sha });
+  }
+
+  const treeRes = await gh(token, `/repos/${owner}/${repo}/git/trees`, {
+    method: "POST",
+    body: { base_tree: baseCommit.tree.sha, tree: blobs },
+  });
+  if (!treeRes.ok) throw new Error(`فشل بناء الشجرة [${treeRes.status}]`);
+  const tree = (await treeRes.json()) as { sha: string };
+
+  const newCommitRes = await gh(token, `/repos/${owner}/${repo}/git/commits`, {
+    method: "POST",
+    body: { message: message || "Weaver self-update", tree: tree.sha, parents: [baseSha] },
+  });
+  if (!newCommitRes.ok) throw new Error(`فشل إنشاء الكوميت [${newCommitRes.status}]`);
+  const newCommit = (await newCommitRes.json()) as { sha: string };
+
+  const updateRes = await gh(token, `/repos/${owner}/${repo}/git/refs/heads/${branch}`, {
+    method: "PATCH",
+    body: { sha: newCommit.sha, force: false },
+  });
+  if (!updateRes.ok) throw new Error(`فشل تحديث الفرع [${updateRes.status}] — لم يُطبَّق أي تغيير`);
+
+  return { commit: newCommit.sha.slice(0, 7), branch, paths: prepared.map((f) => f.path) };
 }
 
 /** تحرير جراحي: استبدال مقطع نصّي داخل ملف منصة بدل إعادة كتابته كاملاً. */
@@ -220,8 +343,10 @@ export async function selfEdit(
   let applied = 0;
   for (const edit of edits) {
     const count = next.split(edit.find).length - 1;
-    if (count === 0) throw new Error(`لم يُعثر على النص المطلوب في ${clean}: ${edit.find.slice(0, 80)}`);
-    if (count > 1) throw new Error(`النص المطلوب متكرر (${count}) في ${clean}؛ وسّع المقطع ليكون فريداً`);
+    if (count === 0)
+      throw new Error(`لم يُعثر على النص المطلوب في ${clean}: ${edit.find.slice(0, 80)}`);
+    if (count > 1)
+      throw new Error(`النص المطلوب متكرر (${count}) في ${clean}؛ وسّع المقطع ليكون فريداً`);
     next = next.replace(edit.find, edit.replace);
     applied += 1;
   }

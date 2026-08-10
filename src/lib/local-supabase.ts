@@ -2,12 +2,16 @@ import type { Sql } from "postgres";
 
 export type LocalSupabaseClient = {
   from: (table: string) => LocalChain;
-  rpc: (fn: string, args?: Record<string, unknown>) => Promise<{ data: any; error: Error | null }>;
+  rpc: (
+    fn: string,
+    args?: Record<string, unknown>,
+  ) => Promise<{ data: unknown; error: Error | null }>;
 };
 
 type WhereOp = { col: string; op: string; val: unknown };
 
 /** Loose row shape: behaves like an array of rows and like a single row. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AnyData = any[] & Record<string, any>;
 
 type ChainResponse = { data: AnyData; count?: number; error: Error | null };
@@ -46,7 +50,7 @@ export function makeLocalSupabase(sql: Sql, userId: string): LocalSupabaseClient
           .map((k) => `${qid(k)} => ${litParam(args[k], queryParams)}`)
           .join(", ");
         const query = `SELECT public.${qid(fn)}(${argList}) as result`;
-        const rows = (await sql.unsafe(query, queryParams as any)) as { result: any }[];
+        const rows = (await sql.unsafe(query, queryParams as never)) as { result: unknown }[];
         return { data: rows[0]?.result ?? null, error: null };
       } catch (err) {
         return { data: null as unknown as AnyData, error: err as Error };
@@ -199,14 +203,14 @@ class LocalChain implements PromiseLike<ChainResponse> {
 
     if (s.count === "exact" && s.head) {
       const query = `SELECT COUNT(*)::int as count FROM ${table} ${where}`;
-      const rows = (await this.sql.unsafe(query, params as any)) as { count: number }[];
+      const rows = (await this.sql.unsafe(query, params as never)) as { count: number }[];
       return rows[0]?.count ?? 0;
     }
 
     if (s.method === "select") {
       const cols = s.columns === "*" || !s.columns ? "*" : parseColumns(s.columns);
       const query = `SELECT ${cols} FROM ${table} ${where} ${order} ${limit} ${offset}`.trim();
-      const rows = await this.sql.unsafe(query, params as any);
+      const rows = await this.sql.unsafe(query, params as never);
       if (s.single) return rows[0] ?? null;
       if (s.maybeSingle) return rows[0] ?? null;
       return rows;
@@ -237,7 +241,7 @@ class LocalChain implements PromiseLike<ChainResponse> {
     if (s.method === "delete") {
       const whereClause = buildWhere(s.where, params);
       const query = `DELETE FROM ${table} ${whereClause} RETURNING *`;
-      return await this.sql.unsafe(query, params as any);
+      return await this.sql.unsafe(query, params as never);
     }
 
     if (s.method === "upsert" && s.values && s.onConflict) {
@@ -356,7 +360,7 @@ async function insertInto(
     }
   }
   query += ` ${returningClause(returning ?? true, returningColumns)}`;
-  return await sql.unsafe(query, params as any);
+  return await sql.unsafe(query, params as never);
 }
 
 async function updateTable(
@@ -373,7 +377,7 @@ async function updateTable(
   const setFrag = cols.map((c) => `${qid(c)} = ${litParam(values[c], params)}`).join(", ");
   const where = buildWhere(whereOps, params);
   const query = `UPDATE ${qid(table)} SET ${setFrag} ${where} ${returningClause(returning ?? true, returningColumns)}`;
-  return await sql.unsafe(query, params as any);
+  return await sql.unsafe(query, params as never);
 }
 
 async function upsertInto(

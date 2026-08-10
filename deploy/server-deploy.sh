@@ -125,11 +125,20 @@ chmod +x "$ROOT/deploy/db/backup.sh" "$ROOT/deploy/db/restore.sh" 2>/dev/null ||
 echo "== إعادة البناء =="
 cd "$ROOT/deploy"
 # مهلة قصوى: لا نترك النشر معلّقاً للأبد إذا تأخّرت إحدى الحاويات.
-timeout 1500 docker compose up -d --build || echo "تحذير: انتهت مهلة docker compose up (يتابع التحقق أدناه)"
+build_rc=0
+timeout 1500 docker compose up -d --build || build_rc=$?
+if [ "$build_rc" -ne 0 ]; then
+  echo "BUILD: FAIL (rc=$build_rc)"
+  echo "== تراجع تلقائي إلى الإصدار السابق =="
+  docker compose up -d 2>&1 | tail -5 || true
+  echo "DEPLOY: FAIL"
+  exit 1
+fi
+echo "BUILD: OK"
 
 for i in $(seq 1 30); do docker compose exec -T db pg_isready -U weaver >/dev/null 2>&1 && break; sleep 2; done
-for f in db/init/03-agent-jobs.sql db/init/04-audit-connectors.sql db/init/05-project-columns.sql; do
-  [ -f "$f" ] && docker compose exec -T db psql -U weaver -d weaver < "$f" >/dev/null 2>&1 || true
+for f in $(ls db/init/*.sql 2>/dev/null | sort); do
+  docker compose exec -T db psql -U weaver -d weaver < "$f" >/dev/null 2>&1 || echo "MIGRATION SKIPPED: $f"
 done
 
 echo "== التحقق =="

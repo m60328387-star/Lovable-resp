@@ -8,6 +8,7 @@
  *   EXECUTOR_TOKEN=<نفس الرمز المستخدم في التطبيق>
  *   PLATFORM_DEPLOY_URL=http://127.0.0.1:8790/deploy
  */
+import { timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import { createWriteStream, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -69,9 +70,17 @@ function startJob(id, action, script, args, extraEnv = {}) {
   });
 }
 
+/** مقارنة ثابتة الزمن تمنع استنتاج الرمز عبر توقيت الاستجابة. */
+function safeEqual(a, b) {
+  const bufA = Buffer.from(String(a));
+  const bufB = Buffer.from(String(b));
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
+}
+
 const server = createServer(async (req, res) => {
   const auth = req.headers.authorization || "";
-  if (!TOKEN || auth !== `Bearer ${TOKEN}`) {
+  if (!TOKEN || !safeEqual(auth, `Bearer ${TOKEN}`)) {
     res.writeHead(401).end("unauthorized");
     return;
   }
@@ -101,9 +110,7 @@ const server = createServer(async (req, res) => {
 
   if ((req.method === "GET" || req.method === "HEAD") && req.url === "/health") {
     res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-    res.end(
-      JSON.stringify({ ok: true, activeJob, activeSince, time: new Date().toISOString() }),
-    );
+    res.end(JSON.stringify({ ok: true, activeJob, activeSince, time: new Date().toISOString() }));
     return;
   }
 
@@ -145,7 +152,6 @@ const server = createServer(async (req, res) => {
     res.writeHead(405).end("method not allowed");
     return;
   }
-
 
   if (activeJob && Date.now() - activeSince > STALE_MS) {
     // مهمة معلّقة منذ وقت طويل (سكربت لم ينتهِ) — نحرّر القفل بدل تعطيل النشر للأبد.

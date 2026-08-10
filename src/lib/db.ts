@@ -14,7 +14,6 @@ export function getPostgresUrl(): string | undefined {
   return process.env["SUPABASE_DB_URL"];
 }
 
-
 let sqlInstance: postgres.Sql | null = null;
 
 export function getSql(): postgres.Sql {

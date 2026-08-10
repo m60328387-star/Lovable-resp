@@ -65,10 +65,13 @@ export function normalizeDomain(input: string): string {
 
 async function resolveA(name: string): Promise<string[]> {
   try {
-    const res = await fetch(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=A`, {
-      headers: { accept: "application/dns-json" },
-      signal: AbortSignal.timeout(6000),
-    });
+    const res = await fetch(
+      `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=A`,
+      {
+        headers: { accept: "application/dns-json" },
+        signal: AbortSignal.timeout(6000),
+      },
+    );
     if (!res.ok) return [];
     const body = (await res.json()) as { Answer?: Array<{ type?: number; data?: string }> };
     return (body.Answer ?? [])

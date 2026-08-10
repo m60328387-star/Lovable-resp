@@ -84,7 +84,8 @@ export function BuildStatusBar({
           <span className="text-[13px] font-semibold">{label}</span>
           {nextAction && !done && (
             <span className="text-[11px] text-muted-foreground">
-              ← {nextActionLabels[nextAction] ?? nextAction.replace("execute_task:", "تنفيذ المهمة ")}
+              ←{" "}
+              {nextActionLabels[nextAction] ?? nextAction.replace("execute_task:", "تنفيذ المهمة ")}
             </span>
           )}
         </div>

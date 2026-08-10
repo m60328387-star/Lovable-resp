@@ -12,7 +12,13 @@ import { createOpenRouterProvider, getOpenRouterModelId } from "@/lib/openrouter
 import { resolveBuildModel, noteOpenRouterUnavailable } from "@/lib/build-provider.server";
 import { authenticateRequest, type AuthedContext } from "@/lib/chat-auth.server";
 import type { Json } from "@/integrations/supabase/types";
-import { reconcileProjectState, saveBuildState, setDeployedUrl, type BuildPhase, type NextAction } from "@/lib/build-state.server";
+import {
+  reconcileProjectState,
+  saveBuildState,
+  setDeployedUrl,
+  type BuildPhase,
+  type NextAction,
+} from "@/lib/build-state.server";
 
 import { runChecks, type Issue } from "@/lib/verify.server";
 import { estimateCostUsd } from "@/lib/pricing";
@@ -65,6 +71,7 @@ import {
 import { buildBrandKit } from "@/lib/brand-kit";
 import { buildSeoKit } from "@/lib/seo-kit";
 import { reviewScreenshot } from "@/lib/design-critic.server";
+import { compactMessages } from "@/lib/context-compaction";
 import { resolveMaxOutputTokens, noteTokenBudgetError } from "@/lib/token-budget.server";
 import {
   tgGetMe,
@@ -166,12 +173,13 @@ const SYSTEM_PROMPT = `أنت "Weaver" — وكيل هندسي (Engineering Agen
 8. REVIEW & REGRESSION — راجع كمراجع مستقل، ثم اذكر اختبارات الانحدار.
 7د. الهوية البصرية أولاً (إلزامي) — في أي مشروع واجهة، قبل كتابة أول ملف HTML نفّذ brand_kit مرة واحدة، ثم اربط brand/tokens.css و brand/head.html في كل صفحة، واستعمل متغيّرات --color-* و --space-* و --radius-* فقط. ممنوع منعاً باتاً كتابة لون hex أو rgb مباشر داخل HTML أو CSS الصفحات بعد تنفيذ brand_kit. إن طلب المستخدم لوناً أو طابعاً محدداً مرّره في baseColor/personality.
 
-8ب. بوابة الجودة البصرية (إلزامية قبل أي نشر) — بعد نجاح run_checks:
-   (أ) نفّذ visual_audit على index.html (متصفح حقيقي + axe + ثلاثة أحجام شاشة).
-   (ب) أصلح كل انتهاك serious/critical وكل خطأ كونسول وكل تمرير أفقي، ثم أعد visual_audit حتى score ≥ 80.
-   (ج) نفّذ design_review على اللقطة، وأصلح كل ملاحظة، وأعده حتى يعود VERDICT: pass.
+8ب. بوابة الجودة البصرية (إلزامية ومُطبَّقة آلياً — publish_site يرفض النشر بدونها) — بعد نجاح run_checks:
+   (أ) نفّذ browser_check (أو visual_audit عبر المنفّذ) على index.html لالتقاط لقطات حقيقية ورصد أخطاء الكونسول والوصولية والتمرير الأفقي.
+   (ب) أصلح كل انتهاك serious/critical وكل خطأ كونسول وكل تمرير أفقي، ثم أعد الفحص حتى ok=true / score ≥ 80.
+   (ج) نفّذ design_review على اللقطة، وأصلح كل ملاحظة، وأعده حتى يعود passed=true (VERDICT: pass و SCORE ≥ 80).
    (د) نفّذ seo_kit وألصق كتلة الـ head في كل صفحة.
-   إن لم يوجد منفّذ متصل فلا تدّعِ أن الفحص البصري تم؛ أخبر المستخدم أن يشغّل منفّذه، ونفّذ ما تبقى من الفحوص النصية.
+   ملاحظة حاسمة: أي write_file بعد design_review يُبطل المراجعة — أعد browser_check ثم design_review قبل النشر مباشرة.
+   publish_site يشغّل اختبار متصفح تلقائياً ويتحقق من وجود مراجعة بصرية ناجحة أحدث من آخر تعديل، ويرفض النشر إن لم تتوفر.
    إن حدّد المستخدم موقعاً مرجعياً فنفّذ capture_reference أولاً ليقارن design_review بالمرجع.
 
 8ج. المشاريع الكبيرة (تطبيقات حقيقية) — إن كان المطلوب تطبيقاً وليس صفحات ثابتة:
@@ -256,6 +264,15 @@ const SYSTEM_PROMPT = `أنت "Weaver" — وكيل هندسي (Engineering Agen
 الصور والأصول:
 - ممنوع استخدام صور وهمية (placeholder.com أو مربعات رمادية) في المواقع التي تُسلَّم. ولّد الصور فعلياً بأداة generate_image واحفظها في assets/ (مثل assets/hero.png)، ثم اربطها بمسار نسبي داخل <img> مع alt وصفي وloading="lazy".
 - استعمل generate_image للصور الرئيسية فقط (هيرو، أقسام كبيرة، صور فريق/منتجات) — من 1 إلى 5 صور للموقع، والباقي أيقونات SVG مضمّنة.
+
+الأسئلة التفاعلية (إلزامي):
+- ممنوع تخمين أو اختلاق أي معلومة حرجة لا يملكها إلا المالك: توكنات وأسرار (Bot Token، مفاتيح API)، معرّفات حسابات، بيانات تواصل حقيقية، صور خاصة (شعار/منتجات/فريق)، أو قرار بين بدائل جوهرية. اسأل بأداة ask_user.
+- اجمع كل ما تحتاجه في نداء ask_user واحد (حتى 6 حقول) في بداية العمل بعد فهم الطلب، ثم أنهِ الجولة فوراً وانتظر إجابة المالك — لا تكتب ملفات تعتمد على قيمة ناقصة.
+- الأسرار: type="secret" واسم الحقل بصيغة متغيّر (TELEGRAM_BOT_TOKEN). تُحفظ تلقائياً في مفاتيح المشروع، وتقرأها بعدها عبر env_get، وممنوع طباعتها في الردّ أو كتابتها داخل الكود.
+- الصور الخاصة: type="image" (شعار، صور منتجات/أعمال حقيقية). أما الصور العامة فولّدها بنفسك عبر generate_image بلا سؤال.
+- الاختيارات: type="choice" مع options واضحة. النصوص القصيرة: type="text".
+- لا تسأل عن تفاصيل يمكنك أن تقرّرها بنفسك (ألوان، تخطيط، تقنيات) — قرّرها ونفّذ. اسأل فقط عمّا يستحيل إكمال البناء بدونه.
+- بعد وصول الإجابات أكمل البناء مباشرة بلا إعادة سؤال.
 
 مفاتيح المشروع:
 - إن احتاج الموقع مفتاح خدمة خارجية، استخدم env_list لمعرفة المتاح و env_get لقراءة القيمة، ولا تطبع القيمة في ردّك أبداً. إن كان المفتاح غير موجود اطلب من المستخدم إضافته من تبويب "المفاتيح" في لوحة المشروع.
@@ -691,11 +708,13 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
         .eq("project_id", pid)
         .order("path", { ascending: true });
       return {
-        files: ((data ?? []) as any[]).map((f: any) => ({
-          path: f.path,
-          version: f.version,
-          bytes: f.content.length,
-        })),
+        files: ((data ?? []) as Array<{ path: string; version: number; content: string }>).map(
+          (f) => ({
+            path: f.path,
+            version: f.version,
+            bytes: f.content.length,
+          }),
+        ),
       };
     },
   });
@@ -704,7 +723,7 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
   const syncRuntime = async () => {
     const { supabase, projectId: pid } = guard();
     const { data } = await supabase.from("files").select("path, content").eq("project_id", pid);
-    const files = ((data ?? []) as any[]).map((f: any) => ({
+    const files = ((data ?? []) as Array<{ path: string; content: string | null }>).map((f) => ({
       path: f.path,
       content: f.content ?? "",
     }));
@@ -776,8 +795,8 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
     if (existing) {
       await supabase
         .from("files")
-        .update({ content, version: (existing as any).version + 1 })
-        .eq("id", (existing as any).id);
+        .update({ content, version: (existing as unknown as { version: number }).version + 1 })
+        .eq("id", (existing as unknown as { id: string }).id);
     } else {
       await supabase.from("files").insert({ project_id: pid, user_id: userId, path, content });
     }
@@ -863,10 +882,15 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
         steps.push({ step: "npm install", ok: res.ok, detail: res.output.slice(-3000) });
       }
 
-      const started = await runtimeDevStart(pid).catch(
-        (err) => ({ ready: false, logs: [String(err)] }) as any,
-      );
-      const logs = await runtimeDevLogs(pid, 200).catch(() => ({ logs: [], errors: [] }) as any);
+      const started = await runtimeDevStart(pid).catch((err) => ({
+        ready: false,
+        logs: [String(err)],
+        errors: [] as string[],
+      }));
+      const logs = await runtimeDevLogs(pid, 200).catch(() => ({
+        logs: [] as string[],
+        errors: [] as string[],
+      }));
       const buildErrors: string[] = (logs.errors ?? []).slice(-30);
       steps.push({
         step: "dev server",
@@ -1091,9 +1115,13 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
       useReference: z.boolean().default(true),
     }),
     execute: async ({ context, device, useReference }) => {
+      const { supabase, userId, projectId: pid } = guard();
       const shot = await readWorkspaceFile(`.weaver/shot-${device}.txt`);
       if (shot.length < 1000) {
-        return { ok: false, error: "لا توجد لقطة — نفّذ visual_audit أولاً." };
+        return {
+          ok: false,
+          error: "لا توجد لقطة — نفّذ browser_check (أو visual_audit) أولاً ثم أعد design_review.",
+        };
       }
       const reference = useReference ? await readWorkspaceFile(".weaver/reference.txt") : "";
       const result = await reviewScreenshot(
@@ -1101,7 +1129,36 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
         context,
         reference.length > 1000 ? reference : undefined,
       );
-      return { ...result, device, comparedToReference: Boolean(reference) };
+      const verdict = /VERDICT\s*:\s*pass/i.test(result.review) ? "pass" : "fail";
+      const scoreMatch = /SCORE\s*:\s*(\d{1,3})/i.exec(result.review);
+      const score = scoreMatch ? Number(scoreMatch[1]) : null;
+      // بوابة الجودة البصرية تُسجَّل في قاعدة البيانات حتى يمنع publish_site النشر بلا مراجعة ناجحة.
+      const passed = result.ok && verdict === "pass" && (score === null || score >= 80);
+      await supabase
+        .from("runs")
+        .insert({
+          project_id: pid,
+          user_id: userId,
+          kind: "design",
+          status: passed ? "passed" : "failed",
+          output: result.review.slice(0, 4000),
+          input: { device, score, verdict },
+        })
+        .then(
+          () => undefined,
+          () => undefined,
+        );
+      return {
+        ...result,
+        device,
+        verdict,
+        score,
+        passed,
+        comparedToReference: Boolean(reference),
+        hint: passed
+          ? "المراجعة البصرية ناجحة — يمكنك النشر."
+          : "أصلح كل ملاحظة في ISSUES بـ write_file ثم أعد browser_check و design_review حتى passed=true. النشر محجوب قبل ذلك.",
+      };
     },
   });
 
@@ -1209,7 +1266,7 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
         baseUrl,
         themeColor,
         organizationType,
-        pages: ((files ?? []) as any[]).map((f: any) => f.path),
+        pages: ((files ?? []) as Array<{ path: string }>).map((f) => f.path),
       });
 
       const written: string[] = [];
@@ -1393,7 +1450,9 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
 
         const batch: { path: string; content: string }[] = [];
         for (const [path, fileIssues] of byFile.entries()) {
-          const file = (files as any[]).find((f: any) => f.path === path);
+          const file = (files as Array<{ path: string; content: string }>).find(
+            (f) => f.path === path,
+          );
           if (!file) continue;
           const prompt = buildFixPrompt(path, file.content, fileIssues);
           const result = await generateText({
@@ -1523,6 +1582,57 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
         throw new Error("يجب تنفيذ run_checks بنجاح مباشرة قبل النشر.");
       }
 
+      // بوابة (1): اختبار متصفح حقيقي تلقائي قبل كل نشر — لا يعتمد على تذكّر النموذج.
+      if (runtimeConfigured()) {
+        const browser = await runBrowserCheck({ devices: ["desktop", "mobile"] }).catch(
+          (error: unknown) => ({
+            ok: false,
+            errors: [String(error).slice(0, 300)],
+            warnings: [] as string[],
+            results: [],
+          }),
+        );
+        if (!browser.ok) {
+          throw new Error(
+            `فشل اختبار المتصفح التلقائي قبل النشر — أصلح هذه الأخطاء ثم أعد المحاولة:\n${browser.errors
+              .slice(0, 15)
+              .join("\n")}`,
+          );
+        }
+      }
+
+      // بوابة (2): مراجعة بصرية ناجحة أحدث من آخر تعديل على الملفات.
+      const [{ data: lastFile }, { data: lastDesign }] = await Promise.all([
+        supabase
+          .from("files")
+          .select("updated_at")
+          .eq("project_id", pid)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from("runs")
+          .select("status, created_at")
+          .eq("project_id", pid)
+          .eq("kind", "design")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ]);
+      const designAt = lastDesign?.created_at ? Date.parse(lastDesign.created_at) : 0;
+      const filesAt = lastFile?.updated_at ? Date.parse(lastFile.updated_at) : 0;
+      if (lastDesign?.status !== "passed") {
+        throw new Error(
+          "النشر محجوب: لا توجد مراجعة بصرية ناجحة. نفّذ browser_check ثم design_review وأصلح كل ملاحظة حتى passed=true.",
+        );
+      }
+      // فرق دقيقة واحدة يسمح بفروق التوقيت الطفيفة بين الكتابة والمراجعة.
+      if (filesAt - designAt > 60_000) {
+        throw new Error(
+          "النشر محجوب: تغيّرت الملفات بعد آخر مراجعة بصرية. أعد browser_check ثم design_review على النسخة الحالية.",
+        );
+      }
+
       let finalSlug = "";
       for (let i = 0; i < 25; i++) {
         const candidate = i === 0 ? base : `${base}-${i + 1}`;
@@ -1618,8 +1728,6 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
       };
     },
   });
-
-
 
   const appendFile = tool({
     description:
@@ -1740,6 +1848,30 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
     },
   });
 
+  const askUser = tool({
+    description:
+      "يسأل المالك عن معلومة ضرورية لا يمكن تخمينها: توكن/مفتاح سري (يُحفظ في مفاتيح المشروع تلقائياً)، صور أو ملفات مرجعية، نص محتوى حقيقي، أو اختيار بين بدائل. تظهر للمالك بطاقة نموذج آمنة. بعد استدعائها أنهِ الجولة فوراً وانتظر الردّ.",
+    inputSchema: z.object({
+      reason: z.string().describe("سطر واحد يشرح لماذا هذه المعلومات مطلوبة الآن"),
+      fields: z
+        .array(
+          z.object({
+            name: z
+              .string()
+              .describe("معرّف الحقل؛ للأسرار استخدم صيغة متغيّر مثل TELEGRAM_BOT_TOKEN"),
+            label: z.string().describe("سؤال قصير بالعربية يظهر للمالك"),
+            type: z.enum(["text", "secret", "choice", "image", "file"]).default("text"),
+            options: z.array(z.string()).default([]).describe("بدائل الاختيار عند type=choice"),
+            placeholder: z.string().default(""),
+            required: z.boolean().default(true),
+          }),
+        )
+        .min(1)
+        .max(6),
+    }),
+    execute: async ({ reason, fields }) => ({ awaiting: true, reason, fields }),
+  });
+
   const envList = tool({
     description: "يسرد أسماء مفاتيح/متغيّرات هذا المشروع المحفوظة (بدون قيمها).",
     inputSchema: z.object({}),
@@ -1843,6 +1975,7 @@ function workspaceTools(auth: AuthedContext | null, projectId: string | null, or
     publish_site: publishSite,
     configure_custom_domain: configureCustomDomain,
     generate_image: generateImage,
+    ask_user: askUser,
     env_list: envList,
     env_get: envGet,
     memory_save: memorySave,
@@ -2005,16 +2138,19 @@ function selfTools() {
         const last = rows[0];
         if (!last) return { ok: true, note: "لا يوجد سجل نشر بعد" };
         const log = String(last["log"] ?? "");
-        if (last["status"] === "success") return { ok: true, note: "آخر نشر ناجح — لا حاجة للإصلاح" };
+        if (last["status"] === "success")
+          return { ok: true, note: "آخر نشر ناجح — لا حاجة للإصلاح" };
         const lines = log.split("\n");
         const errors = lines
           .filter((l) => /error|failed|cannot find|is not|TS\d{4}/i.test(l))
           .slice(-40);
         const paths = [
           ...new Set(
-            [...log.matchAll(/(?:^|[\s(])((?:src|deploy)\/[\w./-]+\.(?:tsx?|jsx?|css|json|mjs|sh))/g)].map(
-              (m) => m[1] as string,
-            ),
+            [
+              ...log.matchAll(
+                /(?:^|[\s(])((?:src|deploy)\/[\w./-]+\.(?:tsx?|jsx?|css|json|mjs|sh))/g,
+              ),
+            ].map((m) => m[1] as string),
           ),
         ].slice(0, 5);
         const files: { path: string; content: string }[] = [];
@@ -2232,9 +2368,7 @@ function webTools() {
  * WEAVER_PUBLIC_URL إن وُجد حتى لا تظهر روابط المشاريع بعنوان IP غير آمن.
  */
 export function resolvePublicOrigin(requestOrigin: string) {
-  const configured = (
-    process.env["WEAVER_PUBLIC_URL"] || "https://buildbuddy-ai-55.lovable.app"
-  )
+  const configured = (process.env["WEAVER_PUBLIC_URL"] || "https://buildbuddy-ai-55.lovable.app")
     .trim()
     .replace(/\/+$/, "");
   let host = "";
@@ -2438,6 +2572,8 @@ type LifecycleState = {
   hasTasks: boolean;
   hasFiles: boolean;
   checksPassed: boolean;
+  /** آخر design_review على النسخة الحالية انتهى بـ pass — بوابة إلزامية قبل النشر. */
+  designPassed: boolean;
   published: boolean;
   acted: boolean;
 };
@@ -2505,6 +2641,8 @@ export function nextBuildAction(state: LifecycleState): string | null {
     return "اكتب ملفات المشروع الفعلية عبر write_file (ابدأ بـ index.html و styles.css).";
   if (!state.checksPassed)
     return "شغّل run_checks وأصلح كل خطأ عبر fix_errors/write_file حتى ينجح الفحص.";
+  if (!state.designPassed)
+    return "نفّذ browser_check ثم design_review على النسخة الحالية وأصلح كل ملاحظة حتى passed=true (النشر محجوب قبلها).";
   if (!state.published) return "انشر المشروع عبر publish_site واذكر الرابط /s/<slug>.";
   return null;
 }
@@ -2547,11 +2685,17 @@ function applyToolResult(state: LifecycleState, name: string, value: unknown) {
   ) {
     state.hasFiles = true;
     state.checksPassed = false;
+    // أي تعديل على الملفات يُبطل المراجعة البصرية السابقة — يجب إعادتها قبل النشر.
+    state.designPassed = false;
     state.published = false;
   }
   if (name === "run_checks" || name === "fix_errors") {
     const result = value as { ok?: boolean };
     state.checksPassed = result.ok === true;
+  }
+  if (name === "design_review") {
+    const result = value as { passed?: boolean };
+    state.designPassed = result.passed === true;
   }
   if (name === "publish_site") state.published = true;
 }
@@ -2830,6 +2974,7 @@ function statusPrompt(state: LifecycleState, buildIntent: boolean) {
     "=== حالة المشروع الحالية (من قاعدة البيانات، ليست تخميناً) ===",
     `ملفات مكتوبة: ${state.hasFiles ? "نعم" : "لا"}`,
     `آخر run_checks ناجح: ${state.checksPassed ? "نعم" : "لا"}`,
+    `مراجعة بصرية ناجحة على النسخة الحالية: ${state.designPassed ? "نعم" : "لا"}`,
     `منشور: ${state.published ? "نعم" : "لا"}`,
   ];
   if (next) {
@@ -2887,6 +3032,7 @@ export const Route = createFileRoute("/api/chat")({
           hasTasks: false,
           hasFiles: false,
           checksPassed: false,
+          designPassed: false,
           published: false,
           acted: false,
         };
@@ -2897,6 +3043,8 @@ export const Route = createFileRoute("/api/chat")({
               { count: fileCount },
               { data: project },
               { data: latestCheck },
+              { data: latestDesign },
+              { data: latestFile },
             ] = await Promise.all([
               auth.supabase
                 .from("tasks")
@@ -2915,10 +3063,30 @@ export const Route = createFileRoute("/api/chat")({
                 .order("created_at", { ascending: false })
                 .limit(1)
                 .maybeSingle(),
+              auth.supabase
+                .from("runs")
+                .select("status, created_at")
+                .eq("project_id", projectId)
+                .eq("kind", "design")
+                .order("created_at", { ascending: false })
+                .limit(1)
+                .maybeSingle(),
+              auth.supabase
+                .from("files")
+                .select("updated_at")
+                .eq("project_id", projectId)
+                .order("updated_at", { ascending: false })
+                .limit(1)
+                .maybeSingle(),
             ]);
             lifecycle.hasTasks = (taskCount ?? 0) > 0;
             lifecycle.hasFiles = (fileCount ?? 0) > 0;
             lifecycle.checksPassed = latestCheck?.status === "passed";
+            // المراجعة البصرية تُعتبر سارية فقط إن كانت أحدث من آخر تعديل على الملفات.
+            const designAt = latestDesign?.created_at ? Date.parse(latestDesign.created_at) : 0;
+            const filesAt = latestFile?.updated_at ? Date.parse(latestFile.updated_at) : 0;
+            lifecycle.designPassed =
+              latestDesign?.status === "passed" && filesAt - designAt <= 60_000;
             lifecycle.published = project?.published === true;
           } catch {
             /* حالة الاكتمال مساعدة؛ الأدوات نفسها تبقى مصدر الحقيقة. */
@@ -2970,12 +3138,12 @@ export const Route = createFileRoute("/api/chat")({
 
         // المهارات المخصّصة التي أنشأها المالك (skill-creator)
         let customPrompt = "";
-        const active = (customRows as any[]).filter((r: any) =>
-          activeSkills.includes(`custom:${r.slug}`),
+        const active = (customRows as Array<{ slug: string; name: string; prompt: string }>).filter(
+          (r) => activeSkills.includes(`custom:${r.slug}`),
         );
         if (active.length > 0) {
           customPrompt = `\n\n=== مهارات مخصّصة مفعّلة (التزم بها حرفياً) ===\n${active
-            .map((r: any) => `مهارة "${r.name}":\n${r.prompt}`)
+            .map((r) => `مهارة "${r.name}":\n${r.prompt}`)
             .join("\n\n")}`;
         }
 
@@ -2984,24 +3152,38 @@ export const Route = createFileRoute("/api/chat")({
         const routed = resolveBuildModel(effectiveModel, origin);
 
         let stepsUsed = 0;
+        // تثبيت حالة البناء الحقيقية (مشتقّة من قاعدة البيانات) عند أي نهاية للجولة.
+        const persistBuildState = async () => {
+          if (!projectId) return;
+          try {
+            // المصالحة تشتق الطور والخطوة التالية من قاعدة البيانات وتحفظهما.
+            await reconcileProjectState(projectId);
+          } catch {
+            try {
+              await saveBuildState(
+                projectId,
+                { phase: lifecyclePhase(lifecycle) },
+                lifecycleNextAction(lifecycle),
+                null,
+              );
+            } catch {
+              // حالة البناء مساعدة؛ لا نُفشل الردّ
+            }
+          }
+        };
         try {
           const result = streamText({
             model: routed.model,
             system:
-              SYSTEM_PROMPT +
-              MEMORY_RULE +
-              DESIGN_KIT +
-              DESIGN_LIBRARY +
-              STACK_LIBRARY +
-              skillPrompt(activeSkills) +
-              customPrompt +
+              buildWeaverSystem(activeSkills, mode, customPrompt) +
               (platformPrompt
                 ? `\n\nتعليمات إضافية من مالك المنصة (إلزامية):\n${platformPrompt}\n`
                 : "") +
-              modePrompt(mode) +
               statusPrompt(lifecycle, buildIntent),
 
-            messages: await convertToModelMessages(messages as UIMessage[]),
+            // ضغط سياق ذكي: يمنع انفجار حجم الطلب في المشاريع الكبيرة
+            // (مخرجات أدوات ضخمة + عشرات الخطوات) وهو أهم سبب لتوقّف البناء في المنتصف.
+            messages: await convertToModelMessages(compactMessages(messages as UIMessage[])),
             tools: hardenTools(
               {
                 ...planningTools(auth, projectId),
@@ -3052,19 +3234,16 @@ export const Route = createFileRoute("/api/chat")({
               } catch {
                 // تسجيل الاستهلاك لا يجب أن يُفشل الردّ
               }
-              if (projectId) {
-                try {
-                  await reconcileProjectState(projectId);
-                  await saveBuildState(
-                    projectId,
-                    { phase: lifecyclePhase(lifecycle) },
-                    lifecycleNextAction(lifecycle),
-                    null,
-                  );
-                } catch {
-                  // حالة البناء مساعدة؛ لا نُفشل الردّ
-                }
-              }
+              await persistBuildState();
+            },
+
+            onAbort: async () => {
+              // حتى عند القطع نُثبّت حالة البناء الحقيقية حتى لا تتجمّد الواجهة.
+              await persistBuildState();
+            },
+
+            onError: async () => {
+              await persistBuildState();
             },
           });
 

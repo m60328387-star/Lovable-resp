@@ -5,7 +5,6 @@
  */
 import { ART_DIRECTION_KIT } from "./art-direction";
 
-
 export const COLOR_LIBRARY = `
 === مكتبة الألوان (اختر لوحة واحدة كاملة ولا تخلط بين لوحتين) ===
 كل لوحة: [خلفية، سطح، نص أساسي، محايد، أساسي، تمييز].
@@ -116,4 +115,3 @@ export const DESIGN_LIBRARY = `
 ثم التزم به في كل الملفات.
 ${COLOR_LIBRARY}${TYPE_LIBRARY}${ICON_LIBRARY}${SHAPE_LIBRARY}${LAYOUT_LIBRARY}${INNOVATION_LIBRARY}${ART_DIRECTION_KIT}
 `;
-

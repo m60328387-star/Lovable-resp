@@ -7,8 +7,7 @@ import { createFileRoute } from "@tanstack/react-router";
 export const Route = createFileRoute("/api/public/live")({
   server: {
     handlers: {
-      GET: async () =>
-        Response.json({ ok: true, at: new Date().toISOString() }, { status: 200 }),
+      GET: async () => Response.json({ ok: true, at: new Date().toISOString() }, { status: 200 }),
     },
   },
 });

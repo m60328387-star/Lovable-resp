@@ -295,7 +295,10 @@ export function ProjectPanel({
   };
 
   const createRepo = async () => {
-    const name = window.prompt("اسم مستودع GitHub الجديد للمشروع:", `weaver-${projectId.slice(0, 8)}`);
+    const name = window.prompt(
+      "اسم مستودع GitHub الجديد للمشروع:",
+      `weaver-${projectId.slice(0, 8)}`,
+    );
     if (!name) return;
     setCreatingRepo(true);
     try {
@@ -321,7 +324,6 @@ export function ProjectPanel({
       setExportingDb(false);
     }
   };
-
 
   const [publishing, setPublishing] = useState(false);
   const publishState = useQuery({
@@ -644,12 +646,7 @@ export function ProjectPanel({
                 </button>
               </div>
 
-              <DomainCard
-                projectId={projectId}
-                published={Boolean(publishState.data?.published)}
-              />
-
-
+              <DomainCard projectId={projectId} published={Boolean(publishState.data?.published)} />
 
               <div className="flex min-h-0 flex-1 justify-center overflow-auto rounded-lg border bg-surface p-2">
                 <iframe

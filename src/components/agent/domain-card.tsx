@@ -173,7 +173,9 @@ export function DomainCard({ projectId, published }: { projectId: string; publis
 
           <div className="mt-2 rounded-lg bg-surface p-2">
             <div className="mb-1 flex items-center justify-between">
-              <span className="text-[10px] font-semibold text-muted-foreground">سجلات DNS المطلوبة</span>
+              <span className="text-[10px] font-semibold text-muted-foreground">
+                سجلات DNS المطلوبة
+              </span>
               <button
                 type="button"
                 onClick={() => {

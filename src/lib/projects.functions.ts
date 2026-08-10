@@ -91,7 +91,14 @@ export const deleteProject = createServerFn({ method: "POST" })
   });
 
 export type ConversationResult = {
-  project: { id: string; title: string; status: string; buildProgress: number; nextAction: string | null; deployedUrl: string | null } | null;
+  project: {
+    id: string;
+    title: string;
+    status: string;
+    buildProgress: number;
+    nextAction: string | null;
+    deployedUrl: string | null;
+  } | null;
   messages: Json[];
   tasks: Array<{
     task_key: string;
@@ -138,14 +145,16 @@ export const getConversation = createServerFn({ method: "POST" })
       `,
     ]);
 
-    const projectRow = (projectRows as unknown as Array<{
-      id: string;
-      title: string;
-      status: string;
-      build_progress: number;
-      next_action: string | null;
-      deployed_url: string | null;
-    }>)[0];
+    const projectRow = (
+      projectRows as unknown as Array<{
+        id: string;
+        title: string;
+        status: string;
+        build_progress: number;
+        next_action: string | null;
+        deployed_url: string | null;
+      }>
+    )[0];
 
     return {
       project: projectRow

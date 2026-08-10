@@ -14,7 +14,9 @@ export const getDomainState = createServerFn({ method: "POST" })
     return {
       ...state,
       dns,
-      instructions: state.domain ? mod.dnsInstructions(state.domain) : mod.dnsInstructions("example.com"),
+      instructions: state.domain
+        ? mod.dnsInstructions(state.domain)
+        : mod.dnsInstructions("example.com"),
     };
   });
 

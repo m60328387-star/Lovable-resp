@@ -24,6 +24,7 @@ export const TOOL_LABELS: Record<string, string> = {
   promote_build: "ترقية البناء",
   publish_site: "نشر الموقع",
   generate_image: "توليد صورة",
+  ask_user: "سؤال المالك",
   env_list: "سرد المفاتيح",
   env_get: "قراءة مفتاح",
   memory_save: "حفظ في الذاكرة",

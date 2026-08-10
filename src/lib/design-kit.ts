@@ -33,7 +33,7 @@ export const DESIGN_KIT = `
 
 6) البيانات: ApexCharts أو Chart.js أو ECharts للرسوم، Grid.js أو DataTables للجداول، Leaflet للخرائط.
 
-7) التنسيق: إما Tailwind عبر cdn.tailwindcss.com مع tailwind.config يعرّف ألوان الهوية والخط، أو CSS مخصص كامل بالمتغيرات أعلاه. لا تخلط الاثنين. Bootstrap 5 RTL مقبول للوحات الإدارة فقط.
+7) التنسيق: CSS مخصص كامل بالمتغيرات أعلاه هو الافتراضي. Tailwind مسموح فقط عبر بناء (build) وليس cdn.tailwindcss.com. لا تخلط نظامين. Bootstrap 5 RTL مقبول للوحات الإدارة فقط.
 
 8) معايير بصرية لا يُسلَّم العمل دونها:
    - شبكة 12 عموداً وحاوية بعرض أقصى ومسافات رأسية متسقة بين الأقسام (80-120px على الشاشات الكبيرة).

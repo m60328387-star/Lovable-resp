@@ -70,6 +70,7 @@ export const Route = createFileRoute("/api/public/worker/tick")({
           hasTasks: false,
           hasFiles: false,
           checksPassed: false,
+          designPassed: false,
           published: false,
           acted: false,
         };

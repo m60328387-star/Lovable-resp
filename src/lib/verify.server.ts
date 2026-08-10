@@ -30,7 +30,7 @@ function checkStyleInjection(file: WorkspaceFile, source: string): Issue[] {
     issues.push({
       path: file.path,
       severity: "error",
-      message: "حقن CSS ديناميكي: createElement(\"style\") — انقل الأنماط إلى ملف .css ثابت",
+      message: 'حقن CSS ديناميكي: createElement("style") — انقل الأنماط إلى ملف .css ثابت',
     });
   }
   if (/\.(insertRule|addRule)\s*\(/.test(source)) {
@@ -360,7 +360,8 @@ function checkHtml(file: WorkspaceFile, all: WorkspaceFile[]): Issue[] {
     issues.push({
       path: file.path,
       severity: "error",
-      message: "cdn.tailwindcss.com مُصرّف وقت تشغيل يبطئ الرسم الأول — استبدله بـ CSS مخصص بالمتغيرات",
+      message:
+        "cdn.tailwindcss.com مُصرّف وقت تشغيل يبطئ الرسم الأول — استبدله بـ CSS مخصص بالمتغيرات",
     });
   }
 
@@ -391,8 +392,6 @@ function checkHtml(file: WorkspaceFile, all: WorkspaceFile[]): Issue[] {
       message: "لا يوجد preconnect للنطاقات الخارجية المستخدمة",
     });
   }
-
-
 
   const known = new Set(all.map((f) => f.path.replace(/^\.?\//, "")));
   const refRe = /(?:href|src)\s*=\s*["']([^"']+)["']/gi;
