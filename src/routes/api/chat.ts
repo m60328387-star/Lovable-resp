@@ -829,8 +829,14 @@ export const Route = createFileRoute("/api/chat")({
             // بعض نماذج OpenRouter (خصوصاً DeepSeek) قد تطبع ترميز نداء الأداة
             // كنص خام ثم تُنهي الجولة. إجبار الاختيار ما دام البناء ناقصاً يجعل
             // المزوّد يعيد tool_call منظّماً يستطيع SDK تنفيذه فعلياً.
-            prepareStep: () => ({
-              toolChoice: isBuildIncomplete(lifecycle, buildIntent) ? "required" : "auto",
+            prepareStep: ({ stepNumber }) => ({
+              // إجبار الأداة مفيد في بداية جولة البناء فقط لمنع الردّ النصّي الوهمي.
+              // إبقاؤه required بعد تنفيذ الأداة كان يمنع النموذج من إنهاء الخطوة
+              // بشكل طبيعي، فيُنتج نداءات فارغة/متكررة ثم يبدو البناء كأنه عالق.
+              toolChoice:
+                stepNumber === 0 && isBuildIncomplete(lifecycle, buildIntent)
+                  ? "required"
+                  : "auto",
             }),
             stopWhen: [stepCountIs(platform.maxSteps || MAX_STEPS), budgetReached(startedAt)],
             maxOutputTokens: resolveMaxOutputTokens(platform.maxTokens),
