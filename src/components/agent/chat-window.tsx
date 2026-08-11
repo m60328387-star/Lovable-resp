@@ -574,6 +574,10 @@ function ChatSurface({
       const assistantText = ((message.parts ?? []) as AnyPart[])
         .map((part) => (part.type === "text" ? String(part["text"] ?? "") : ""))
         .join(" ");
+      const leakedToolProtocol =
+        /(?:tool_calls?_begin|tool_call_begin|tool_sep|tool_call_end|<\|tool)/i.test(
+          assistantText,
+        );
       const stalledByWords =
         /(?:اكتب\s+[«"]?أكمل|أحتاج\s+(?:إلى\s+)?مراجعة|بانتظار\s+(?:المراجعة|الموافقة)|سأكمل\s+لاحق)/i.test(
           assistantText,
@@ -587,6 +591,13 @@ function ChatSurface({
         autoRunsRef.current = 0;
         setPendingContinue(false);
         toast.info("الوكيل بانتظار إجابتك لإكمال البناء.");
+        return;
+      }
+      if (leakedToolProtocol) {
+        nextActionRef.current =
+          "أعد تنفيذ الخطوة السابقة بنداء أداة أصلي؛ لا تطبع رموز tool_call داخل النص.";
+        setPendingContinue(true);
+        toast.warning("صحّح Weaver نداء أداة غير منفّذ وسيعيد الخطوة تلقائياً.");
         return;
       }
       if (meta?.complete) {
@@ -756,7 +767,7 @@ function ChatSurface({
       submit(
         `متابعة تنفيذ تلقائية: لا تشرح ولا تطلب مراجعة أو موافقة.${
           next ? ` الخطوة المطلوبة الآن: ${next}` : ""
-        } أكمل الملفات المتبقية، شغّل run_checks وأصلح كل خطأ، ثم انشر عبر publish_site. لا تنهِ الجولة قبل تنفيذ أداة فعلية.`,
+        } أكمل الملفات المتبقية، شغّل run_checks وأصلح كل خطأ، ثم انشر عبر publish_site. نفّذ الأدوات من قناة tool calling الأصلية فقط؛ ممنوع طباعة رموز tool_calls_begin أو tool_call_begin كنص. لا تنهِ الجولة قبل تنفيذ أداة فعلية.`,
       );
     }, 900);
     return () => window.clearTimeout(timer);

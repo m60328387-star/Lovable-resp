@@ -823,6 +823,12 @@ export const Route = createFileRoute("/api/chat")({
               }
               return { ...toolCall, toolName: match };
             },
+            // بعض نماذج OpenRouter (خصوصاً DeepSeek) قد تطبع ترميز نداء الأداة
+            // كنص خام ثم تُنهي الجولة. إجبار الاختيار ما دام البناء ناقصاً يجعل
+            // المزوّد يعيد tool_call منظّماً يستطيع SDK تنفيذه فعلياً.
+            prepareStep: () => ({
+              toolChoice: isBuildIncomplete(lifecycle, buildIntent) ? "required" : "auto",
+            }),
             stopWhen: [stepCountIs(platform.maxSteps || MAX_STEPS), budgetReached(startedAt)],
             maxOutputTokens: resolveMaxOutputTokens(platform.maxTokens),
 
