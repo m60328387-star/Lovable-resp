@@ -54,7 +54,7 @@ import {
   type PlatformChangeView,
 } from "@/lib/platform.functions";
 import { MODEL_OPTIONS } from "@/lib/model-settings";
-import { MODE_STORAGE_KEY } from "@/lib/modes";
+import { modeStorageKey } from "@/lib/modes";
 import { createProject } from "@/lib/projects.functions";
 import { cn } from "@/lib/utils";
 
@@ -1347,7 +1347,9 @@ function PlatformPage() {
   const openSelfChat = useMutation({
     mutationFn: () => createProject({ data: { title: "تطوير Weaver" } }),
     onSuccess: (project) => {
-      if (typeof window !== "undefined") window.localStorage.setItem(MODE_STORAGE_KEY, "platform");
+      if (typeof window !== "undefined" && project)
+        window.localStorage.setItem(modeStorageKey(project.id), "platform");
+
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
       if (project) void navigate({ to: "/c/$threadId", params: { threadId: project.id } });
     },

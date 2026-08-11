@@ -196,6 +196,7 @@ function applyToolResult(state: LifecycleState, name: string, value: unknown) {
   if (!isSuccessfulResult(value)) return;
   if (
     [
+      "turbo_build",
       "write_file",
       "write_files",
       "append_file",
@@ -219,6 +220,7 @@ function applyToolResult(state: LifecycleState, name: string, value: unknown) {
   }
   if (
     [
+      "turbo_build",
       "write_file",
       "write_files",
       "append_file",
@@ -227,7 +229,8 @@ function applyToolResult(state: LifecycleState, name: string, value: unknown) {
       "promote_build",
     ].includes(name)
   ) {
-    state.hasFiles = true;
+    const turbo = value as { mode?: string };
+    if (name !== "turbo_build" || turbo.mode === "built") state.hasFiles = true;
     state.checksPassed = false;
     // أي تعديل على الملفات يُبطل المراجعة البصرية السابقة — يجب إعادتها قبل النشر.
     state.designPassed = false;

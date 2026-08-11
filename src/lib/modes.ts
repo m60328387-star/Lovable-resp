@@ -81,20 +81,32 @@ export function modePrompt(id: string | null | undefined) {
   return `\n\n## وضع التشغيل\n${mode.prompt}\n`;
 }
 
-/** حالة الوضع محفوظة محلياً حتى تبقى بين الجلسات. */
-export function useMode() {
+/**
+ * حالة الوضع محفوظة **لكل محادثة** حتى لا يتسرّب وضع "تطوير Weaver" إلى مشاريع المستخدم.
+ * كان المفتاح عاماً سابقاً، فبمجرد فتح دردشة تطوير المنصة تبقى كل الدردشات في وضع platform
+ * فتُحجب أدوات مساحة العمل ولا يبدأ أي بناء.
+ */
+export function modeStorageKey(threadId?: string | null) {
+  return threadId ? `${MODE_STORAGE_KEY}:${threadId}` : MODE_STORAGE_KEY;
+}
+
+export function useMode(threadId?: string | null) {
   const [mode, setModeState] = useState<ModeId>("build");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const stored = window.localStorage.getItem(MODE_STORAGE_KEY);
-    if (stored && MODES.some((m) => m.id === stored)) setModeState(stored as ModeId);
-  }, []);
+    const stored = window.localStorage.getItem(modeStorageKey(threadId));
+    setModeState(stored && MODES.some((m) => m.id === stored) ? (stored as ModeId) : "build");
+  }, [threadId]);
 
-  const setMode = useCallback((next: ModeId) => {
-    setModeState(next);
-    if (typeof window !== "undefined") window.localStorage.setItem(MODE_STORAGE_KEY, next);
-  }, []);
+  const setMode = useCallback(
+    (next: ModeId) => {
+      setModeState(next);
+      if (typeof window !== "undefined")
+        window.localStorage.setItem(modeStorageKey(threadId), next);
+    },
+    [threadId],
+  );
 
   return { mode, setMode };
 }

@@ -10,9 +10,9 @@ const ICONS: Record<ModeId, typeof Hammer> = {
   platform: Wrench,
 };
 
-/** مبدّل أوضاع التشغيل: بناء / بحث / استشارة / بوت. */
-export function ModePicker() {
-  const { mode, setMode } = useMode();
+/** مبدّل أوضاع التشغيل: بناء / بحث / استشارة / بوت — الوضع محفوظ لكل محادثة. */
+export function ModePicker({ threadId }: { threadId?: string | null }) {
+  const { mode, setMode } = useMode(threadId);
 
   return (
     <div className="flex items-center gap-1 rounded-xl border bg-card p-1">

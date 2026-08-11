@@ -412,7 +412,7 @@ function ChatSurface({
   );
   const { model } = useModelSetting();
   const { skills } = useSkills();
-  const { mode } = useMode();
+  const { mode, setMode } = useMode(threadId);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -575,9 +575,7 @@ function ChatSurface({
         .map((part) => (part.type === "text" ? String(part["text"] ?? "") : ""))
         .join(" ");
       const leakedToolProtocol =
-        /(?:tool_calls?_begin|tool_call_begin|tool_sep|tool_call_end|<\|tool)/i.test(
-          assistantText,
-        );
+        /(?:tool_calls?_begin|tool_call_begin|tool_sep|tool_call_end|<\|tool)/i.test(assistantText);
       const stalledByWords =
         /(?:اكتب\s+[«"]?أكمل|أحتاج\s+(?:إلى\s+)?مراجعة|بانتظار\s+(?:المراجعة|الموافقة)|سأكمل\s+لاحق)/i.test(
           assistantText,
@@ -1024,8 +1022,24 @@ function ChatSurface({
                 </button>
               )}
             </div>
+            {mode === "platform" ? (
+              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-700 dark:text-amber-300">
+                <span>
+                  هذه الدردشة في وضع «تطوير Weaver» — لن يُبنى أي مشروع هنا. حوّلها إلى وضع البناء
+                  للمتابعة.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setMode("build")}
+                  className="rounded-lg bg-primary px-2 py-1 text-[11px] text-primary-foreground"
+                >
+                  التحويل إلى وضع البناء
+                </button>
+              </div>
+            ) : null}
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <ModePicker />
+              <ModePicker threadId={threadId} />
+
               <ModelPicker />
               <SkillsPicker />
               <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border bg-card px-2 py-1 text-[11px] text-muted-foreground">

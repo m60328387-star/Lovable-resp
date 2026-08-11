@@ -356,20 +356,67 @@ export function workspaceTools(
 
   async function putDoc(path: string, content: string) {
     const { supabase, userId, projectId: pid } = guard();
-    const { data: existing } = await supabase
+    const { data: existing, error: readError } = await supabase
       .from("files")
       .select("id, version")
       .eq("project_id", pid)
       .eq("path", path)
       .maybeSingle();
+    if (readError) throw new Error(`تعذّر قراءة ${path}: ${readError.message}`);
     if (existing) {
-      await supabase
+      const { data: updated, error } = await supabase
         .from("files")
         .update({ content, version: existing.version + 1 })
-        .eq("id", existing.id);
+        .eq("id", existing.id)
+        .eq("version", existing.version)
+        .select("version")
+        .maybeSingle();
+      if (error) throw new Error(`تعذّر تحديث ${path}: ${error.message}`);
+      if (!updated) throw new Error(`تعارض إصدار أثناء تحديث ${path} — أعد المحاولة.`);
     } else {
-      await supabase.from("files").insert({ project_id: pid, user_id: userId, path, content });
+      const { data: inserted, error } = await supabase
+        .from("files")
+        .insert({ project_id: pid, user_id: userId, path, content })
+        .select("id")
+        .maybeSingle();
+      if (error) throw new Error(`تعذّر حفظ ${path}: ${error.message}`);
+      if (!inserted) throw new Error(`لم تؤكد قاعدة البيانات حفظ ${path}.`);
     }
+  }
+
+  /** يتحقق من الحفظ ثم يزامن مساحة التنفيذ ويشغّل المعاينة مباشرة. */
+  async function activateSavedWorkspace(expectedPaths: string[]) {
+    const { supabase, projectId: pid } = guard();
+    const { data, error } = await supabase
+      .from("files")
+      .select("path, content")
+      .eq("project_id", pid)
+      .in("path", expectedPaths);
+    if (error) throw new Error(`تعذّر التحقق من الملفات المحفوظة: ${error.message}`);
+    const saved = (data ?? []) as Array<{ path: string; content: string | null }>;
+    const savedPaths = new Set(saved.map((file) => file.path));
+    const missing = expectedPaths.filter((path) => !savedPaths.has(path));
+    if (missing.length > 0) throw new Error(`فشل تأكيد حفظ الملفات: ${missing.join("، ")}`);
+
+    if (!runtimeConfigured()) {
+      return { synced: false, previewStarted: false, note: "الملفات محفوظة؛ بيئة المعاينة غير مهيأة." };
+    }
+    const all = await supabase.from("files").select("path, content").eq("project_id", pid);
+    if (all.error) throw new Error(`تعذّر تجهيز ملفات المعاينة: ${all.error.message}`);
+    const runtimeFiles = ((all.data ?? []) as Array<{ path: string; content: string | null }>).map(
+      (file) => ({ path: file.path, content: file.content ?? "" }),
+    );
+    await runtimeSync(pid, runtimeFiles, false);
+    const started = await runtimeDevStart(pid).catch((runtimeError: unknown) => ({
+      ready: false,
+      error: runtimeError instanceof Error ? runtimeError.message : String(runtimeError),
+    }));
+    return {
+      synced: true,
+      previewStarted: started.ready === true,
+      previewUrl: `/api/public/rt/${pid}/`,
+      ...("error" in started ? { previewError: started.error } : {}),
+    };
   }
 
   /** يقرأ الاتجاه البصري المعتمد للمشروع من brand/DIRECTION.md. */
@@ -566,12 +613,17 @@ export function workspaceTools(
         }
       }
       const failed = results.filter((r) => !r.ok);
+      const activation =
+        failed.length === 0 && results.length > 0
+          ? await activateSavedWorkspace(results.map((result) => result.path))
+          : { synced: false, previewStarted: false };
       return {
         ok: failed.length === 0,
         written: results.length - failed.length,
         failed: failed.length,
         results,
         summary,
+        runtime: activation,
         ...(failed.length
           ? { error: `فشلت كتابة ${failed.length} ملف — أعد كتابتها فردياً بـ write_file.` }
           : {}),
@@ -2436,6 +2488,7 @@ export function workspaceTools(
 
       const all = [...brandFiles.files, ...uiLibraryFiles(), ...composed.files];
       for (const file of all) await putDoc(file.path, file.content);
+      const activation = await activateSavedWorkspace(all.map((file) => file.path));
       designContractReady = true;
 
       // 3) تدقيق نصوص حتمي لكل صفحة
@@ -2458,6 +2511,7 @@ export function workspaceTools(
         written: all.map((f) => f.path),
         direction: dir.id,
         palette: brandFiles.palette,
+        runtime: activation,
         copyAudit: audits,
         next: clean
           ? "الموقع مكتوب كاملاً. نفّذ الآن: auto_repair ← run_checks ← browser_check (designGate ≥ 85) ← design_review ← seo_kit ← publish_site."
