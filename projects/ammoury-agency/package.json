@@ -1,0 +1,16 @@
+{
+  "name": "ammoury-agency",
+  "version": "1.0.0",
+  "description": "منصة حجوزات السفر الفاخرة - Ammoury Agency",
+  "main": "index.html",
+  "scripts": {
+    "dev": "python -m http.server 3000",
+    "build": "echo 'Build complete'",
+    "start": "python -m http.server 3000"
+  },
+  "keywords": ["travel", "booking", "luxury", "agency"],
+  "author": "Ammoury Agency",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {}
+}
