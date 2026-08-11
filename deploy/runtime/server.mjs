@@ -42,7 +42,8 @@ const NPM_CACHE = process.env["RUNTIME_NPM_CACHE"] ?? "/workspaces/.npm-cache";
 const heavyQueue = [];
 let heavyRunning = 0;
 
-const isHeavy = (command) => /\b(npm|pnpm|yarn|bun|npx|vite|tsc|next|webpack|esbuild)\b/i.test(command);
+const isHeavy = (command) =>
+  /\b(npm|pnpm|yarn|bun|npx|vite|tsc|next|webpack|esbuild)\b/i.test(command);
 
 /** ينفّذ المهام الثقيلة بالتتابع حتى لا تلتهم الذاكرة دفعة واحدة. */
 function withHeavySlot(task) {
@@ -74,7 +75,6 @@ const safeId = (value) =>
     .replace(/[^a-zA-Z0-9_-]/g, "")
     .slice(0, 64);
 const workspaceDir = (projectId) => join(ROOT, safeId(projectId));
-
 
 function json(res, body, status = 200) {
   const payload = JSON.stringify(body);
@@ -224,7 +224,6 @@ async function runCommand(projectId, command, timeoutMs) {
   return heavy ? withHeavySlot(exec1) : exec1();
 }
 
-
 // ---------------------------------------------------------------- dev server
 
 async function detectStart(projectId, port) {
@@ -243,10 +242,7 @@ async function detectStart(projectId, port) {
   const flags = isVite
     ? ` -- --host 0.0.0.0 --port ${port} --strictPort --base ${base}`
     : ` -- --port ${port}`;
-  
-  // إضافة fallback لاستخدام npx عند فشل vite المباشر
-  const viteCommand = isVite ? `npx vite${flags}` : `npm run ${script}${flags}`;
-  return { mode: isVite ? "vite" : "npm", command: viteCommand, base };
+  return { mode: isVite ? "vite" : "npm", command: `npm run ${script}${flags}`, base };
 }
 
 async function stopDev(projectId) {
@@ -279,7 +275,6 @@ async function startDev(projectId, overrideCommand) {
   await enforceServerCap(id);
   const dir = workspaceDir(id);
   if (!existsSync(dir)) await mkdir(dir, { recursive: true });
-
 
   // المشاريع المعتمدة على npm يجب أن تصبح قابلة للمعاينة دون خطوة يدوية.
   // npm install تزايدي: يعيد استخدام node_modules والحجم المخبأ في مساحة المشروع.
@@ -504,7 +499,6 @@ const server = http.createServer(async (req, res) => {
       at: Date.now(),
     });
 
-
   // المعاينة عامة (تُستهلك داخل iframe) — تُقيَّد بمعرّف المشروع فقط.
   if (path.startsWith("/p/")) {
     const [, , projectId, ...restParts] = path.split("/");
@@ -665,4 +659,3 @@ setInterval(() => {
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`[runtime] يعمل على المنفذ ${PORT} — مساحات العمل في ${ROOT}`);
 });
-

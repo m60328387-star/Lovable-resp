@@ -18,14 +18,11 @@ export function runtimeConfigured() {
   return Boolean(runtimeToken() && runtimeToken().length >= 16);
 }
 
-async function call<T>(
+async function callOnce<T>(
   path: string,
   body: Record<string, unknown>,
-  timeoutMs = 320_000,
+  timeoutMs: number,
 ): Promise<T> {
-  if (!runtimeConfigured()) {
-    throw new Error("بيئة التنفيذ غير مهيّأة على هذا الخادم (EXECUTOR_TOKEN مفقود).");
-  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -58,6 +55,41 @@ async function call<T>(
   }
 }
 
+/** أخطاء عابرة تستحق إعادة محاولة: إعادة تشغيل الحاوية، انقطاع شبكي، بوابة غير جاهزة. */
+function transient(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /غير متاحة حالياً|ECONNREFUSED|ECONNRESET|fetch failed|socket|network|HTTP 50[234]/i.test(
+    message,
+  );
+}
+
+/**
+ * نداء بيئة التنفيذ مع إعادة محاولة قصيرة.
+ * حاوية التنفيذ نقطة فشل وحيدة: أي إعادة تشغيل لحظية كانت تُسقط كل أدوات البناء
+ * (shell، dev_server، browser_check) في تلك الجولة. محاولتان إضافيتان تمتصان ذلك.
+ */
+async function call<T>(
+  path: string,
+  body: Record<string, unknown>,
+  timeoutMs = 320_000,
+): Promise<T> {
+  if (!runtimeConfigured()) {
+    throw new Error("بيئة التنفيذ غير مهيّأة على هذا الخادم (EXECUTOR_TOKEN مفقود).");
+  }
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await callOnce<T>(path, body, timeoutMs);
+    } catch (error) {
+      lastError = error;
+      // لا نعيد تنفيذ أمر قد يكون نُفّذ فعلاً إلا إذا كان الفشل شبكياً واضحاً.
+      if (!transient(error) || attempt === 2) break;
+      await new Promise((resolve) => setTimeout(resolve, 800 * (attempt + 1)));
+    }
+  }
+  throw lastError;
+}
+
 export type RuntimeFile = { path: string; content: string };
 
 export type ExecResult = {
@@ -81,8 +113,18 @@ export type DevStatus = {
 export const runtimeSync = (projectId: string, files: RuntimeFile[], clean = false) =>
   call<{ ok: boolean; written: number }>("/sync", { projectId, files, clean }, 120_000);
 
-export const runtimeExec = (projectId: string, command: string, timeoutMs = 300_000) =>
-  call<ExecResult>("/exec", { projectId, command, timeoutMs }, timeoutMs + 20_000);
+/**
+ * سقف صلب لأي أمر تنفيذ واحد.
+ * ميزانية جولة الوكيل 240 ثانية (WEAVER_TIME_BUDGET_MS)، فإذا سُمح لأمر واحد بـ 300 ثانية
+ * فإنه يبتلع الجولة كلها ويُقطع في منتصفه — وهذا ما كان يظهر للمستخدم كـ"توقّف البناء فجأة".
+ * الآن أي أمر يُقصّ قبل نهاية الجولة، فيعود خطأ مفهوماً ويستأنف الوكيل بدل أن ينقطع.
+ */
+const MAX_EXEC_MS = Number(process.env["WEAVER_MAX_EXEC_MS"] ?? 170_000);
+
+export const runtimeExec = (projectId: string, command: string, timeoutMs = 150_000) => {
+  const bounded = Math.min(Math.max(timeoutMs, 5_000), MAX_EXEC_MS);
+  return call<ExecResult>("/exec", { projectId, command, timeoutMs: bounded }, bounded + 15_000);
+};
 
 export const runtimeDevStart = (projectId: string, command?: string) =>
   call<{

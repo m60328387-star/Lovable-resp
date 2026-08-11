@@ -96,35 +96,56 @@ export function hasBuildIntent(messages: UIMessage[]) {
   return BUILD_INTENT_PATTERN.test(text);
 }
 
-/** آخر نصّ كتبه المستخدم — يُستخدم لاختيار الأدوات المرسلة للنموذج. */
-function lastUserText(messages: UIMessage[]) {
-  const lastUser = [...messages].reverse().find((m) => m.role === "user");
-  return (lastUser?.parts ?? [])
-    .map((p) => (p.type === "text" ? p.text : ""))
+/** كل ما كتبه المستخدم في هذه المحادثة — لا آخر رسالة فقط. */
+function conversationUserText(messages: UIMessage[]) {
+  return messages
+    .filter((m) => m.role === "user")
+    .flatMap((m) => (m.parts ?? []).map((p) => (p.type === "text" ? p.text : "")))
     .join(" ")
     .toLowerCase();
 }
 
+/** أسماء الأدوات التي استُدعيت فعلاً في هذه المحادثة (من أجزاء الرسائل `tool-<name>`). */
+function usedToolNames(messages: UIMessage[]): Set<string> {
+  const names = new Set<string>();
+  for (const message of messages) {
+    for (const part of (message.parts ?? []) as { type: string }[]) {
+      if (typeof part?.type === "string" && part.type.startsWith("tool-")) {
+        names.add(part.type.slice(5));
+      }
+    }
+  }
+  return names;
+}
+
 /**
  * يحدّد مجموعات الأدوات المرسلة في هذه الجولة.
- * إرسال كل الأدوات دائماً كان يضيف آلاف التوكينات إلى كل خطوة من خطوات الوكيل،
- * وهو أحد أكبر أسباب البطء وطول الصمت مقارنة بالمنصات الكبرى.
+ * إرسال كل الأدوات دائماً كان يضيف آلاف التوكينات إلى كل خطوة من خطوات الوكيل.
+ *
+ * لكن الاختيار يجب أن يكون *لاصقاً*: الاعتماد على آخر رسالة مستخدم فقط كان يجعل
+ * مجموعة أدوات تختفي في جولة المتابعة التلقائية ("أكمل البناء…")، فيستدعي النموذج
+ * أداةً لم تعد مسجّلة ← AI_NoSuchToolError وانقطاع الجولة. لذلك نفحص المحادثة كاملة،
+ * ونُبقي أي مجموعة استُخدمت فعلاً، ونُبقي أدوات قاعدة البيانات مفعّلة دائماً في وضع البناء
+ * (أربع أدوات فقط، كلفتها في السياق مهملة أمام كلفة انقطاع الجولة).
  */
 export function selectToolGroups(mode: string, messages: UIMessage[]) {
-  const text = lastUserText(messages);
+  const text = conversationUserText(messages);
+  const used = usedToolNames(messages);
   const mentions = (pattern: RegExp) => pattern.test(text);
+  const usedAny = (names: string[]) => names.some((n) => used.has(n));
+
   if (mode === "platform") {
     return { workspace: false, bot: false, db: false, connectors: false, platform: true };
   }
   return {
-    workspace: mode === "build",
-    bot: mode === "bot" || mentions(/telegram|تيليغرام|بوت|bot/),
-    db:
-      mode === "build" &&
-      mentions(/قاعدة|جدول|sql|database|supabase|بيانات|تسجيل|حساب|auth|مستخدم/),
-    connectors: mentions(
-      /connector|رابط خارجي|api|notion|airtable|slack|github|resend|unsplash|بريد|webhook/,
-    ),
+    workspace: mode === "build" || usedAny(["write_file", "turbo_build", "run_checks", "publish"]),
+    bot: mode === "bot" || mentions(/telegram|تيليغرام|بوت|bot/) || usedAny(["bot_setup"]),
+    // دائماً متاحة أثناء البناء: اختفاؤها بين الجولات كان سبباً مباشراً لأخطاء الأدوات.
+    db: mode === "build" || usedAny(["db_sql", "db_inspect", "db_select", "db_insert"]),
+    connectors:
+      mentions(
+        /connector|رابط خارجي|api|notion|airtable|slack|github|resend|unsplash|بريد|webhook/,
+      ) || usedAny(["connector_call", "connector_list"]),
     platform: mentions(/weaver نفس|المنصة نفسها|عدّل المنصة|طوّر المنصة|self_/),
   };
 }
@@ -770,6 +791,13 @@ export const Route = createFileRoute("/api/chat")({
                 ...(needs.connectors ? connectorTools(projectId, auth.userId) : {}),
                 ...(needs.platform ? selfTools() : {}),
                 ...(needs.platform ? platformTools(auth) : {}),
+                // شبكة أمان: أي نداء لأداة غير موجودة يُحوَّل إلى هنا بدل إسقاط الجولة.
+                tool_help: tool({
+                  description:
+                    "يعيد قائمة أسماء الأدوات المتاحة في هذه الجولة. استخدمه إذا رُفض نداء أداة.",
+                  inputSchema: z.object({}),
+                  execute: async () => ({ ok: true, note: "استخدم اسماً من هذه القائمة فقط." }),
+                }),
               },
               (name, value) => applyToolResult(lifecycle, name, value),
               undefined,
@@ -787,12 +815,8 @@ export const Route = createFileRoute("/api/chat")({
                 names.find((n) => n.toLowerCase() === raw.toLowerCase()) ??
                 names.find((n) => raw && (n.includes(raw) || raw.includes(n)));
               if (!match) {
-                // لا نحوّل الاسم الفارغ إلى أداة تحتاج مُدخلات. قراءة الملفات نقطة استرجاع آمنة.
-                if (names.includes("list_files"))
-                  return { ...toolCall, toolName: "list_files", input: "{}" };
-                if (names.includes("memory_list"))
-                  return { ...toolCall, toolName: "memory_list", input: "{}" };
-                return null;
+                // لا نخترع أداة عشوائية: نعيد للنموذج قائمة الأسماء الصحيحة ليصحّح نفسه.
+                return { ...toolCall, toolName: "tool_help", input: "{}" };
               }
               if (match === "run_status" && (!toolCall.input || toolCall.input === "{}")) {
                 return { ...toolCall, toolName: match, input: "{}" };
@@ -881,6 +905,19 @@ export const Route = createFileRoute("/api/chat")({
                 return `النموذج المختار لم يعد متاحاً على OpenRouter${
                   suggested ? ` (البديل المدفوع: ${suggested})` : ""
                 }. اختر نموذجاً آخر من قائمة النماذج أعلى المحادثة ثم أعد الإرسال — سيكمل البناء من آخر حالة محفوظة.`;
+              }
+              // تشخيص واضح بدل رسالة عامة واحدة تخفي السبب الحقيقي.
+              if (/context length|maximum context|too many tokens|context_length/i.test(message)) {
+                return `سياق المحادثة تجاوز حدّ النموذج. ابدأ جولة جديدة في نفس المشروع — الحالة والملفات محفوظة وسيكمل البناء منها.`;
+              }
+              if (/tool_call_id|tool_calls|must be a response to/i.test(message)) {
+                return `تسلسل نداءات الأدوات وصل غير مكتمل إلى المزوّد. أعد الإرسال — سيُعاد بناء السياق من آخر حالة محفوظة.`;
+              }
+              if (/rate limit|429|too many requests/i.test(message)) {
+                return `المزوّد يحدّ من عدد الطلبات الآن (429). انتظر دقيقة ثم أعد الإرسال؛ سيكمل من آخر حالة محفوظة.`;
+              }
+              if (/401|403|invalid api key|unauthorized/i.test(message)) {
+                return `مفتاح OpenRouter مرفوض أو منتهي. حدّثه من الإعدادات ثم أعد الإرسال.`;
               }
               return `انقطعت هذه الجولة بسبب خطأ من المزوّد: ${message}\n\nسيستأنف Weaver التنفيذ تلقائياً من آخر حالة محفوظة.`;
             },

@@ -31,11 +31,17 @@ import {
   runtimeSync,
 } from "@/lib/runtime.server";
 import { buildBrandKit } from "@/lib/brand-kit";
-import { listSnippets, getSnippets } from "@/lib/design/ui-library";
+import { listSnippets, getSnippets, uiLibraryFiles } from "@/lib/design/ui-library";
 import { scoreDesignMetrics, aggregateDesignScores } from "@/lib/design/metrics";
 import { listStarterKits, planFromKit } from "@/lib/design/starter-kits";
+import { contentContract, composeSite } from "@/lib/design/turbo";
 import { copyBrief, auditCopy } from "@/lib/design/copy-engine";
-import { directionsQuestion, getDirection, listDirections } from "@/lib/design/directions";
+import {
+  directionsForKit,
+  directionsQuestion,
+  getDirection,
+  listDirections,
+} from "@/lib/design/directions";
 
 import { buildSeoKit } from "@/lib/seo-kit";
 import { reviewScreenshot } from "@/lib/design-critic.server";
@@ -2294,6 +2300,172 @@ export function workspaceTools(
     },
   });
 
+  /* ===================== Turbo Build — موقع كامل بخطوتين ===================== */
+  const turboBuild = tool({
+    description:
+      "البناء فائق السرعة (المسار الافتراضي لأي موقع تسويقي/شركة/متجر/بورتفوليو): يبني الموقع كاملاً في خطوتين بدل عشرات الجولات، وبنفس سقف الجودة (نفس أطقم البداية والاتجاهات البصرية وتوكنات الهوية وقصاصات Weaver UI). " +
+      "الخطوة 1: نفّذه بـ plan=true مع kit (و direction إن اخترته) — يعيد عقد المحتوى: كل صفحة وكل قسم والمفاتيح النصية المطلوبة. " +
+      "الخطوة 2: أعده بـ plan=false مع نفس kit/direction + brand + copy تحتوي قيمة عربية حقيقية لكل مفتاح — فيكتب الهوية والمكتبة وكل الصفحات دفعةً واحدة ويدقّق النصوص تلقائياً. " +
+      "بعدها فقط: auto_repair ← run_checks ← browser_check ← design_review ← publish_site. لا تستخدم starter_kit/design_directions/brand_kit/ui_snippet يدوياً إلا إذا طلب المستخدم تخطيطاً خاصاً خارج الأطقم.",
+    inputSchema: z.object({
+      plan: z.boolean().default(true).describe("true = أعِد عقد المحتوى فقط، false = ابنِ الموقع"),
+      kit: z
+        .string()
+        .default("")
+        .describe(
+          "معرّف طقم البداية: saas, store, agency, luxury, portfolio, restaurant, landing, blog",
+        ),
+      direction: z
+        .string()
+        .default("")
+        .describe("معرّف الاتجاه البصري المختار، أو فارغ ليُختار الأنسب للطقم تلقائياً"),
+      brandName: z.string().default("").describe("اسم العلامة كما يظهر للزائر"),
+      tagline: z.string().default("").describe("جملة تعريفية قصيرة بالعربية"),
+      email: z.string().default("").describe("بريد التواصل"),
+      phone: z.string().default("").describe("رقم الهاتف"),
+      copy: z
+        .array(
+          z.object({
+            page: z.string().describe("مسار الصفحة كما في عقد المحتوى، مثل index.html"),
+            section: z.string().describe("معرّف القسم، مثل hero أو meta"),
+            values: z.record(z.string(), z.string()).describe("قيمة عربية حقيقية لكل مفتاح"),
+          }),
+        )
+        .default([])
+        .describe("كل نصوص الموقع دفعة واحدة"),
+    }),
+    execute: async ({ plan, kit, direction, brandName, tagline, email, phone, copy }) => {
+      const { supabase, userId, projectId: pid } = guard();
+      if (!kit) {
+        return {
+          ok: false,
+          error: "حدّد kit أولاً.",
+          kits: listStarterKits(),
+        };
+      }
+      const contract = contentContract(kit);
+      if (!contract) return { ok: false, error: `طقم غير معروف: ${kit}`, kits: listStarterKits() };
+
+      const dir = (direction ? getDirection(direction) : null) ?? directionsForKit(kit)[0] ?? null;
+      if (!dir) return { ok: false, error: "تعذّر تحديد اتجاه بصري لهذا الطقم." };
+
+      if (plan) {
+        return {
+          ok: true,
+          mode: "plan",
+          kit: {
+            id: contract.kit.id,
+            name: contract.kit.name,
+            required: contract.kit.required,
+            acceptance: contract.kit.acceptance,
+            avoid: contract.kit.avoid,
+          },
+          direction: { id: dir.id, name: dir.name, signature: dir.signature, avoid: dir.avoid },
+          pages: contract.pages,
+          copyContract: contract.kit.copyContract,
+          next: `اكتب كل النصوص العربية الحقيقية الآن وأعد turbo_build بـ plan=false و kit=${kit} و direction=${dir.id} مع brand و copy كاملة (لا تترك أي مفتاح فارغاً ولا نصاً عاماً).`,
+        };
+      }
+
+      if (!brandName.trim()) return { ok: false, error: "brandName مطلوب." };
+
+      const composed = composeSite({
+        kitId: kit,
+        brand: {
+          name: brandName,
+          tagline: tagline || contract.kit.name,
+          email: email || "info@example.com",
+          phone: phone || "",
+        },
+        copy,
+      });
+      if (!composed) return { ok: false, error: "تعذّر التركيب." };
+      if (composed.missing.length) {
+        return {
+          ok: false,
+          mode: "missing_copy",
+          missing: composed.missing,
+          error: "نصوص ناقصة — أعد turbo_build بـ plan=false بعد ملء كل المفاتيح المذكورة.",
+        };
+      }
+
+      // 1) عقد التصميم: الطقم + الاتجاه
+      await putDoc(
+        KIT_DOC,
+        [
+          `# طقم البداية المعتمد`,
+          `id: ${contract.kit.id}`,
+          `name: ${contract.kit.name}`,
+          `personality: ${contract.kit.personality}`,
+          `baseColor: ${contract.kit.baseColor}`,
+          ``,
+          `## الأقسام الإلزامية`,
+          ...contract.kit.required.map((r) => `- ${r}`),
+          ``,
+          `## معايير القبول`,
+          ...contract.kit.acceptance.map((a) => `- ${a}`),
+          ``,
+          `## محظورات`,
+          ...contract.kit.avoid.map((a) => `- ${a}`),
+        ].join("\n"),
+      );
+      await putDoc(
+        DIRECTION_DOC,
+        [
+          `# الاتجاه البصري المعتمد`,
+          `id: ${dir.id}`,
+          `name: ${dir.name}`,
+          `personality: ${dir.personality}`,
+          `baseColor: ${dir.baseColor}`,
+          `signature: ${dir.signature}`,
+          ``,
+          `## محظورات هذا الاتجاه`,
+          ...dir.avoid.map((a) => `- ${a}`),
+        ].join("\n"),
+      );
+
+      // 2) الهوية + مكتبة المكوّنات
+      const brandFiles = buildBrandKit({
+        brandName,
+        personality: dir.personality,
+        baseColor: dir.baseColor,
+        locale: "ar",
+        scheme: "light",
+        logoStyle: "monogram",
+      });
+
+      const all = [...brandFiles.files, ...uiLibraryFiles(), ...composed.files];
+      for (const file of all) await putDoc(file.path, file.content);
+      designContractReady = true;
+
+      // 3) تدقيق نصوص حتمي لكل صفحة
+      const audits = composed.files
+        .filter((f) => f.path.endsWith(".html"))
+        .map((f) => {
+          const a = auditCopy(f.content, { path: f.path });
+          return {
+            path: f.path,
+            ok: a.ok,
+            score: a.score,
+            issues: a.issues.filter((i) => i.level === "error").slice(0, 5),
+          };
+        });
+      const clean = audits.every((a) => a.ok);
+
+      return {
+        ok: true,
+        mode: "built",
+        written: all.map((f) => f.path),
+        direction: dir.id,
+        palette: brandFiles.palette,
+        copyAudit: audits,
+        next: clean
+          ? "الموقع مكتوب كاملاً. نفّذ الآن: auto_repair ← run_checks ← browser_check (designGate ≥ 85) ← design_review ← seo_kit ← publish_site."
+          : "عالج ملاحظات copyAudit بـ edit_file على الصفحات المذكورة، ثم أكمل: run_checks ← browser_check ← design_review ← publish_site.",
+      };
+    },
+  });
+
   const envList = tool({
     description: "يسرد أسماء مفاتيح/متغيّرات هذا المشروع المحفوظة (بدون قيمها).",
     inputSchema: z.object({}),
@@ -2368,7 +2540,71 @@ export function workspaceTools(
     },
   });
 
+  const dbMigrate = tool({
+    description:
+      "أداة احترافية لهجرة قواعد البيانات. تنفّذ أمر SQL (DDL/DML) على قاعدة بيانات المشروع وتحفظه فوراً كملف هجرة في supabase/migrations/ لتوثيقه وتتبعه في Git.",
+    inputSchema: z.object({
+      sql: z.string().describe("جملة أو جمل SQL كاملة (CREATE TABLE، فهارس، دوال، إلخ)"),
+      reason: z.string().describe("سبب هذا التغيير أو وصف مختصر له (سيُستخدم كاسم للملف)"),
+    }),
+    execute: async ({ sql, reason }) => {
+      const pid = guard().projectId;
+      const { getTargetConfig, projectSchema, targetRunSql } =
+        await import("@/lib/target-supabase.server");
+      const cfg = getTargetConfig();
+      if (!cfg) return { ok: false, error: "قاعدة البيانات غير مهيأة" };
+      const schema = projectSchema(pid);
+
+      try {
+        const result = await targetRunSql(cfg, schema, sql);
+        const timestamp = new Date()
+          .toISOString()
+          .replace(/[-:T.]/g, "")
+          .slice(0, 14);
+        const safeReason = reason
+          .replace(/[^a-z0-9_]/gi, "_")
+          .toLowerCase()
+          .slice(0, 30);
+        const filename = `supabase/migrations/${timestamp}_${safeReason}.sql`;
+        const fileResult = await writeOne(filename, sql, `Migration: ${reason}`);
+        return {
+          ok: true,
+          executed: true,
+          migrationFile: filename,
+          fileWritten: fileResult.ok,
+          result,
+        };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+  });
+
+  const runE2eTests = tool({
+    description:
+      "أداة اختبار الجودة التفاعلي (QA). تكتب وتنفّذ اختبار Playwright (E2E) للتأكد من تفاعل المكونات الفعلي (نقر أزرار، تعبئة نماذج، مسارات التنقل) وتعيد النتيجة.",
+    inputSchema: z.object({
+      testName: z.string().describe("اسم الاختبار (مثل login_flow)"),
+      script: z.string().describe("كود Playwright الكامل (استيراد test و expect وكتابة الفحص)"),
+    }),
+    execute: async ({ testName, script }) => {
+      const pid = guard().projectId;
+      const safeName = testName.replace(/[^a-z0-9_]/gi, "_").toLowerCase();
+      const filename = `tests/${safeName}.spec.ts`;
+      await writeOne(filename, script, `E2E Test: ${testName}`);
+      const result = await runtimeExec(pid, `npx playwright test ${filename}`);
+      return {
+        ok: result.ok,
+        filename,
+        exitCode: result.exitCode,
+        output: result.output.trim().slice(-2000),
+      };
+    },
+  });
+
   return {
+    db_migrate: dbMigrate,
+    run_e2e_tests: runE2eTests,
     write_file: writeFile,
     write_files: writeFiles,
 
@@ -2409,6 +2645,7 @@ export function workspaceTools(
     generate_image: generateImage,
     ask_user: askUser,
     design_directions: designDirectionsTool,
+    turbo_build: turboBuild,
 
     env_list: envList,
     env_get: envGet,

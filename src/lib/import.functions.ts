@@ -4,12 +4,12 @@ import { z } from "zod";
 
 const fileSchema = z.object({
   path: z.string().min(1).max(400),
-  content: z.string().max(1_500_000),
+  content: z.string().max(5_000_000),
 });
 
 const input = z.object({
   projectId: z.string().uuid(),
-  files: z.array(fileSchema).min(1).max(400),
+  files: z.array(fileSchema).min(1).max(2000),
   mode: z.enum(["merge", "replace"]),
 });
 
@@ -32,9 +32,16 @@ export const importWorkspaceFiles = createServerFn({ method: "POST" })
 
     let created = 0;
     let updated = 0;
+    const newFilesToInsert: Array<{
+      project_id: string;
+      user_id: string;
+      path: string;
+      content: string;
+    }> = [];
+
     for (const file of data.files) {
       const prev = byPath.get(file.path);
-      if (prev) {
+      if (prev && data.mode !== "replace") {
         await supabase.from("file_versions").insert({
           project_id: data.projectId,
           user_id: userId,
@@ -48,7 +55,7 @@ export const importWorkspaceFiles = createServerFn({ method: "POST" })
           .eq("id", prev.id);
         updated++;
       } else {
-        await supabase.from("files").insert({
+        newFilesToInsert.push({
           project_id: data.projectId,
           user_id: userId,
           path: file.path,
@@ -56,6 +63,12 @@ export const importWorkspaceFiles = createServerFn({ method: "POST" })
         });
         created++;
       }
+    }
+
+    const chunkSize = 500;
+    for (let i = 0; i < newFilesToInsert.length; i += chunkSize) {
+      const chunk = newFilesToInsert.slice(i, i + chunkSize);
+      await supabase.from("files").insert(chunk);
     }
 
     const { data: all } = await supabase

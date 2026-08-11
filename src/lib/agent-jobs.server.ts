@@ -210,8 +210,22 @@ export async function requeueForContinuation(
   const history = Array.isArray(job.messages) ? (job.messages as unknown[]) : [];
   // لا نسمح لتاريخ مهمة طويلة بالنمو بلا حد. حالة المشروع في الجداول والملفات،
   // أما الرسائل فتبقى نافذة عمل قصيرة فقط.
-  const boundedHistory =
-    history.length > 16 ? [...history.slice(0, 2), ...history.slice(-12)] : history;
+  // مهم: القصّ بالفهرس وحده كان يفصل نداء أداة عن نتيجته، فيرفض المزوّد الطلب بـ400
+  // وتظهر للمستخدم رسالة "انقطعت هذه الجولة". لذلك ندفع بداية النافذة للأمام حتى
+  // لا تبدأ برسالة نتيجة أداة يتيمة.
+  const boundedHistory = (() => {
+    if (history.length <= 16) return history;
+    const head = history.slice(0, 2);
+    let start = history.length - 12;
+    const isOrphanResult = (m: unknown) => {
+      const role = (m as { role?: string })?.role;
+      if (role === "tool") return true;
+      const parts = (m as { parts?: { type?: string }[] })?.parts ?? [];
+      return role !== "user" && parts.some((p) => String(p?.type ?? "").startsWith("tool-"));
+    };
+    while (start < history.length && isOrphanResult(history[start])) start += 1;
+    return [...head, ...history.slice(start)];
+  })();
   const next = [
     ...boundedHistory,
     {

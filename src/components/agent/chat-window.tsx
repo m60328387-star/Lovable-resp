@@ -147,7 +147,10 @@ function MessageParts({
   busy: boolean;
   onAnswer: (text: string, files: AskAttachment[]) => void;
 }) {
-  const parts = (Array.isArray(message.parts) ? message.parts : []) as unknown as AnyPart[];
+  const parts = useMemo(
+    () => (Array.isArray(message.parts) ? message.parts : []) as unknown as AnyPart[],
+    [message.parts],
+  );
   const updates: Record<string, TaskUpdate> = {};
   for (const part of parts) {
     if (part.type === "tool-update_task" && part["output"]) {
