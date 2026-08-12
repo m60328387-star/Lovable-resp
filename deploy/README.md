@@ -87,6 +87,7 @@ docker compose restart executor
 - `deploy/.env` بصلاحيات `600` ومجلد النسخ `700`.
 
 ### تنزيل نسخة إلى جهازك
+
 ```
 scp -i <key> root@194.163.155.52:/opt/weaver/backups/latest.sql.gz ./
 ```

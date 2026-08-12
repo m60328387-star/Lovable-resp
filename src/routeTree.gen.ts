@@ -24,6 +24,7 @@ import { Route as AuthenticatedWorkerRouteImport } from './routes/_authenticated
 import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as SSplatRouteImport } from './routes/s/$'
 import { Route as AuthenticatedCThreadIdRouteImport } from './routes/_authenticated/c.$threadId'
+import { Route as ApiEventsProjectIdRouteImport } from './routes/api/events.$projectId'
 import { Route as ApiPublicHealthRouteImport } from './routes/api/public/health'
 import { Route as ApiPublicLiveRouteImport } from './routes/api/public/live'
 import { Route as ApiPublicExecutorActionRouteImport } from './routes/api/public/executor/$action'
@@ -108,6 +109,11 @@ const AuthenticatedCThreadIdRoute = AuthenticatedCThreadIdRouteImport.update({
   path: '/c/$threadId',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const ApiEventsProjectIdRoute = ApiEventsProjectIdRouteImport.update({
+  id: '/api/events/$projectId',
+  path: '/api/events/$projectId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicHealthRoute = ApiPublicHealthRouteImport.update({
   id: '/api/public/health',
   path: '/api/public/health',
@@ -170,6 +176,7 @@ export interface FileRoutesByFullPath {
   '/api/chat': typeof ApiChatRoute
   '/s/$': typeof SSplatRoute
   '/c/$threadId': typeof AuthenticatedCThreadIdRoute
+  '/api/events/$projectId': typeof ApiEventsProjectIdRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/live': typeof ApiPublicLiveRoute
   '/api/public/executor/$action': typeof ApiPublicExecutorActionRoute
@@ -195,6 +202,7 @@ export interface FileRoutesByTo {
   '/api/chat': typeof ApiChatRoute
   '/s/$': typeof SSplatRoute
   '/c/$threadId': typeof AuthenticatedCThreadIdRoute
+  '/api/events/$projectId': typeof ApiEventsProjectIdRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/live': typeof ApiPublicLiveRoute
   '/api/public/executor/$action': typeof ApiPublicExecutorActionRoute
@@ -222,6 +230,7 @@ export interface FileRoutesById {
   '/api/chat': typeof ApiChatRoute
   '/s/$': typeof SSplatRoute
   '/_authenticated/c/$threadId': typeof AuthenticatedCThreadIdRoute
+  '/api/events/$projectId': typeof ApiEventsProjectIdRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/live': typeof ApiPublicLiveRoute
   '/api/public/executor/$action': typeof ApiPublicExecutorActionRoute
@@ -249,6 +258,7 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/s/$'
     | '/c/$threadId'
+    | '/api/events/$projectId'
     | '/api/public/health'
     | '/api/public/live'
     | '/api/public/executor/$action'
@@ -274,6 +284,7 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/s/$'
     | '/c/$threadId'
+    | '/api/events/$projectId'
     | '/api/public/health'
     | '/api/public/live'
     | '/api/public/executor/$action'
@@ -300,6 +311,7 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/s/$'
     | '/_authenticated/c/$threadId'
+    | '/api/events/$projectId'
     | '/api/public/health'
     | '/api/public/live'
     | '/api/public/executor/$action'
@@ -317,6 +329,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   ApiChatRoute: typeof ApiChatRoute
   SSplatRoute: typeof SSplatRoute
+  ApiEventsProjectIdRoute: typeof ApiEventsProjectIdRoute
   ApiPublicHealthRoute: typeof ApiPublicHealthRoute
   ApiPublicLiveRoute: typeof ApiPublicLiveRoute
   ApiPublicExecutorActionRoute: typeof ApiPublicExecutorActionRoute
@@ -435,6 +448,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCThreadIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/api/events/$projectId': {
+      id: '/api/events/$projectId'
+      path: '/api/events/$projectId'
+      fullPath: '/api/events/$projectId'
+      preLoaderRoute: typeof ApiEventsProjectIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/health': {
       id: '/api/public/health'
       path: '/api/public/health'
@@ -536,6 +556,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   ApiChatRoute: ApiChatRoute,
   SSplatRoute: SSplatRoute,
+  ApiEventsProjectIdRoute: ApiEventsProjectIdRoute,
   ApiPublicHealthRoute: ApiPublicHealthRoute,
   ApiPublicLiveRoute: ApiPublicLiveRoute,
   ApiPublicExecutorActionRoute: ApiPublicExecutorActionRoute,

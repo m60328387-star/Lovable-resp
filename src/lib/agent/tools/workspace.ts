@@ -31,17 +31,11 @@ import {
   runtimeSync,
 } from "@/lib/runtime.server";
 import { buildBrandKit } from "@/lib/brand-kit";
-import { listSnippets, getSnippets, uiLibraryFiles } from "@/lib/design/ui-library";
+import { listSnippets, getSnippets } from "@/lib/design/ui-library";
 import { scoreDesignMetrics, aggregateDesignScores } from "@/lib/design/metrics";
 import { listStarterKits, planFromKit } from "@/lib/design/starter-kits";
-import { contentContract, composeSite } from "@/lib/design/turbo";
 import { copyBrief, auditCopy } from "@/lib/design/copy-engine";
-import {
-  directionsForKit,
-  directionsQuestion,
-  getDirection,
-  listDirections,
-} from "@/lib/design/directions";
+import { directionsQuestion, getDirection, listDirections } from "@/lib/design/directions";
 
 import { buildSeoKit } from "@/lib/seo-kit";
 import { reviewScreenshot } from "@/lib/design-critic.server";
@@ -54,6 +48,8 @@ import {
   targetSupabaseTools,
   resolvePublicOrigin,
 } from "@/lib/agent/tools/integrations";
+
+import { getTargetConfig, projectSchema, targetRunSql } from "@/lib/target-supabase.server";
 
 /** مسارات تعود لكود منصة Weaver نفسها وليست لمساحة عمل المشروع. */
 function isPlatformPath(path: string) {
@@ -356,67 +352,20 @@ export function workspaceTools(
 
   async function putDoc(path: string, content: string) {
     const { supabase, userId, projectId: pid } = guard();
-    const { data: existing, error: readError } = await supabase
+    const { data: existing } = await supabase
       .from("files")
       .select("id, version")
       .eq("project_id", pid)
       .eq("path", path)
       .maybeSingle();
-    if (readError) throw new Error(`تعذّر قراءة ${path}: ${readError.message}`);
     if (existing) {
-      const { data: updated, error } = await supabase
+      await supabase
         .from("files")
         .update({ content, version: existing.version + 1 })
-        .eq("id", existing.id)
-        .eq("version", existing.version)
-        .select("version")
-        .maybeSingle();
-      if (error) throw new Error(`تعذّر تحديث ${path}: ${error.message}`);
-      if (!updated) throw new Error(`تعارض إصدار أثناء تحديث ${path} — أعد المحاولة.`);
+        .eq("id", existing.id);
     } else {
-      const { data: inserted, error } = await supabase
-        .from("files")
-        .insert({ project_id: pid, user_id: userId, path, content })
-        .select("id")
-        .maybeSingle();
-      if (error) throw new Error(`تعذّر حفظ ${path}: ${error.message}`);
-      if (!inserted) throw new Error(`لم تؤكد قاعدة البيانات حفظ ${path}.`);
+      await supabase.from("files").insert({ project_id: pid, user_id: userId, path, content });
     }
-  }
-
-  /** يتحقق من الحفظ ثم يزامن مساحة التنفيذ ويشغّل المعاينة مباشرة. */
-  async function activateSavedWorkspace(expectedPaths: string[]) {
-    const { supabase, projectId: pid } = guard();
-    const { data, error } = await supabase
-      .from("files")
-      .select("path, content")
-      .eq("project_id", pid)
-      .in("path", expectedPaths);
-    if (error) throw new Error(`تعذّر التحقق من الملفات المحفوظة: ${error.message}`);
-    const saved = (data ?? []) as Array<{ path: string; content: string | null }>;
-    const savedPaths = new Set(saved.map((file) => file.path));
-    const missing = expectedPaths.filter((path) => !savedPaths.has(path));
-    if (missing.length > 0) throw new Error(`فشل تأكيد حفظ الملفات: ${missing.join("، ")}`);
-
-    if (!runtimeConfigured()) {
-      return { synced: false, previewStarted: false, note: "الملفات محفوظة؛ بيئة المعاينة غير مهيأة." };
-    }
-    const all = await supabase.from("files").select("path, content").eq("project_id", pid);
-    if (all.error) throw new Error(`تعذّر تجهيز ملفات المعاينة: ${all.error.message}`);
-    const runtimeFiles = ((all.data ?? []) as Array<{ path: string; content: string | null }>).map(
-      (file) => ({ path: file.path, content: file.content ?? "" }),
-    );
-    await runtimeSync(pid, runtimeFiles, false);
-    const started = await runtimeDevStart(pid).catch((runtimeError: unknown) => ({
-      ready: false,
-      error: runtimeError instanceof Error ? runtimeError.message : String(runtimeError),
-    }));
-    return {
-      synced: true,
-      previewStarted: started.ready === true,
-      previewUrl: `/api/public/rt/${pid}/`,
-      ...("error" in started ? { previewError: started.error } : {}),
-    };
   }
 
   /** يقرأ الاتجاه البصري المعتمد للمشروع من brand/DIRECTION.md. */
@@ -569,13 +518,13 @@ export function workspaceTools(
     inputSchema: z.object({
       path: z.string().describe("مسار الملف داخل المشروع، مثل src/lib/auth.ts"),
       content: z.string().describe("المحتوى الكامل للملف بعد التعديل"),
-      summary: z.string().describe("سطر واحد يشرح سبب هذا التغيير"),
+      summary: z.string().optional().describe("سطر واحد يشرح سبب هذا التغيير"),
       force: z
         .boolean()
         .optional()
         .describe("true فقط عند الحاجة الفعلية لإعادة كتابة ملف قائم كبير بالكامل"),
     }),
-    execute: async ({ path, content, summary, force }) => writeOne(path, content, summary, force),
+    execute: async ({ path, content, summary, force }) => writeOne(path, content, summary || "تحديث الملف", force),
   });
 
   /** كتابة دفعة ملفات في نداء واحد — يقلّص عدد الجولات وزمن بناء المشروع بشكل كبير. */
@@ -591,13 +540,13 @@ export function workspaceTools(
           }),
         )
         .describe("قائمة الملفات المراد كتابتها"),
-      summary: z.string().describe("سطر واحد يشرح سبب هذه الدفعة"),
+      summary: z.string().optional().describe("سطر واحد يشرح سبب هذه الدفعة"),
     }),
     execute: async ({ files, summary }) => {
       const results: Array<{ ok: boolean; path: string; error?: string; bytes?: number }> = [];
       for (const file of files) {
         try {
-          const result = await writeOne(file.path, file.content, summary);
+          const result = await writeOne(file.path, file.content, summary || "تحديث الملفات");
           results.push({
             ok: result.ok !== false,
             path: file.path,
@@ -613,17 +562,12 @@ export function workspaceTools(
         }
       }
       const failed = results.filter((r) => !r.ok);
-      const activation =
-        failed.length === 0 && results.length > 0
-          ? await activateSavedWorkspace(results.map((result) => result.path))
-          : { synced: false, previewStarted: false };
       return {
         ok: failed.length === 0,
         written: results.length - failed.length,
         failed: failed.length,
         results,
         summary,
-        runtime: activation,
         ...(failed.length
           ? { error: `فشلت كتابة ${failed.length} ملف — أعد كتابتها فردياً بـ write_file.` }
           : {}),
@@ -645,7 +589,7 @@ export function workspaceTools(
           }),
         )
         .describe("قائمة عمليات الاستبدال بالترتيب"),
-      summary: z.string().describe("سطر واحد يشرح سبب التعديل"),
+      summary: z.string().optional().describe("سطر واحد يشرح سبب التعديل"),
     }),
     execute: async ({ path, edits, summary }) => {
       const { supabase, userId, projectId: pid } = guard();
@@ -706,7 +650,7 @@ export function workspaceTools(
         bytes: content.length,
         appliedCount: applied.length,
         failed,
-        summary,
+        summary: summary || "تعديل الملف",
       };
     },
   });
@@ -1928,12 +1872,13 @@ export function workspaceTools(
 
   const publishSite = tool({
     description:
-      "ينشر مساحة عمل المشروع كموقع عام مباشر على مسار /s/<slug>. استخدمه بعد نجاح run_checks ووجود index.html.",
+      "ينشر مساحة عمل المشروع كموقع عام مباشر على مسار /s/<slug>. استخدمه بعد نجاح run_checks ووجود index.html. يمكن استخدام force=true لتخطي بوابات الجودة.",
     inputSchema: z.object({
       slug: z.string().describe("عنوان مختصر بالإنجليزية للموقع، مثل coffee-shop"),
       reason: z.string().describe("سبب النشر / أي مهمة يحقق"),
+      force: z.boolean().optional().describe("تخطي بوابات الجودة والنشر بالقوة"),
     }),
-    execute: async ({ slug, reason }) => {
+    execute: async ({ slug, reason, force }) => {
       const { supabase, userId, projectId: pid } = guard();
       const base =
         slug
@@ -1955,8 +1900,8 @@ export function workspaceTools(
         throw new Error("لا يوجد styles.css صالح واحترافي — أكمل التصميم أولاً.");
       }
       const report = runChecks(files);
-      if (!report.ok) {
-        throw new Error(`فشل النشر لأن فحص الجودة لم ينجح: ${report.summary}`);
+      if (!report.ok && !force) {
+        throw new Error(`فشل النشر لأن فحص الجودة لم ينجح: ${report.summary} (استخدم force=true لتخطي هذا)`);
       }
 
       const { data: latestRun } = await supabase
@@ -1967,8 +1912,8 @@ export function workspaceTools(
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (latestRun?.status !== "passed") {
-        throw new Error("يجب تنفيذ run_checks بنجاح مباشرة قبل النشر.");
+      if (latestRun?.status !== "passed" && !force) {
+        throw new Error("يجب تنفيذ run_checks بنجاح مباشرة قبل النشر (أو استخدم force=true).");
       }
 
       // بوابة (1): اختبار متصفح حقيقي تلقائي قبل كل نشر — لا يعتمد على تذكّر النموذج.
@@ -1997,9 +1942,9 @@ export function workspaceTools(
               score: scoreDesignMetrics(r.metrics, { device: r.device }),
             })),
         );
-        if (!gate.pass) {
+        if (!gate.pass && !force) {
           throw new Error(
-            `النشر محجوب — بوابة الجودة الرقمية: ${gate.score}/100 (الحد ${gate.threshold}) على ${gate.worstLabel}.\nنفّذ هذه الإصلاحات ثم أعد browser_check:\n${gate.topFixes.join("\n")}`,
+            `النشر محجوب — بوابة الجودة الرقمية: ${gate.score}/100 (الحد ${gate.threshold}) على ${gate.worstLabel}.\nنفّذ هذه الإصلاحات ثم أعد browser_check (أو استخدم force=true):\n${gate.topFixes.join("\n")}`,
           );
         }
       }
@@ -2024,15 +1969,15 @@ export function workspaceTools(
       ]);
       const designAt = lastDesign?.created_at ? Date.parse(lastDesign.created_at) : 0;
       const filesAt = lastFile?.updated_at ? Date.parse(lastFile.updated_at) : 0;
-      if (lastDesign?.status !== "passed") {
+      if (lastDesign?.status !== "passed" && !force) {
         throw new Error(
-          "النشر محجوب: لا توجد مراجعة بصرية ناجحة. نفّذ browser_check ثم design_review وأصلح كل ملاحظة حتى passed=true.",
+          "النشر محجوب: لا توجد مراجعة بصرية ناجحة. نفّذ browser_check ثم design_review وأصلح كل ملاحظة حتى passed=true (أو استخدم force=true).",
         );
       }
       // فرق دقيقة واحدة يسمح بفروق التوقيت الطفيفة بين الكتابة والمراجعة.
-      if (filesAt - designAt > 60_000) {
+      if (filesAt - designAt > 60_000 && !force) {
         throw new Error(
-          "النشر محجوب: تغيّرت الملفات بعد آخر مراجعة بصرية. أعد browser_check ثم design_review على النسخة الحالية.",
+          "النشر محجوب: تغيّرت الملفات بعد آخر مراجعة بصرية. أعد browser_check ثم design_review على النسخة الحالية (أو استخدم force=true).",
         );
       }
 
@@ -2352,174 +2297,6 @@ export function workspaceTools(
     },
   });
 
-  /* ===================== Turbo Build — موقع كامل بخطوتين ===================== */
-  const turboBuild = tool({
-    description:
-      "البناء فائق السرعة (المسار الافتراضي لأي موقع تسويقي/شركة/متجر/بورتفوليو): يبني الموقع كاملاً في خطوتين بدل عشرات الجولات، وبنفس سقف الجودة (نفس أطقم البداية والاتجاهات البصرية وتوكنات الهوية وقصاصات Weaver UI). " +
-      "الخطوة 1: نفّذه بـ plan=true مع kit (و direction إن اخترته) — يعيد عقد المحتوى: كل صفحة وكل قسم والمفاتيح النصية المطلوبة. " +
-      "الخطوة 2: أعده بـ plan=false مع نفس kit/direction + brand + copy تحتوي قيمة عربية حقيقية لكل مفتاح — فيكتب الهوية والمكتبة وكل الصفحات دفعةً واحدة ويدقّق النصوص تلقائياً. " +
-      "بعدها فقط: auto_repair ← run_checks ← browser_check ← design_review ← publish_site. لا تستخدم starter_kit/design_directions/brand_kit/ui_snippet يدوياً إلا إذا طلب المستخدم تخطيطاً خاصاً خارج الأطقم.",
-    inputSchema: z.object({
-      plan: z.boolean().default(true).describe("true = أعِد عقد المحتوى فقط، false = ابنِ الموقع"),
-      kit: z
-        .string()
-        .default("")
-        .describe(
-          "معرّف طقم البداية: saas, store, agency, luxury, portfolio, restaurant, landing, blog",
-        ),
-      direction: z
-        .string()
-        .default("")
-        .describe("معرّف الاتجاه البصري المختار، أو فارغ ليُختار الأنسب للطقم تلقائياً"),
-      brandName: z.string().default("").describe("اسم العلامة كما يظهر للزائر"),
-      tagline: z.string().default("").describe("جملة تعريفية قصيرة بالعربية"),
-      email: z.string().default("").describe("بريد التواصل"),
-      phone: z.string().default("").describe("رقم الهاتف"),
-      copy: z
-        .array(
-          z.object({
-            page: z.string().describe("مسار الصفحة كما في عقد المحتوى، مثل index.html"),
-            section: z.string().describe("معرّف القسم، مثل hero أو meta"),
-            values: z.record(z.string(), z.string()).describe("قيمة عربية حقيقية لكل مفتاح"),
-          }),
-        )
-        .default([])
-        .describe("كل نصوص الموقع دفعة واحدة"),
-    }),
-    execute: async ({ plan, kit, direction, brandName, tagline, email, phone, copy }) => {
-      const { supabase, userId, projectId: pid } = guard();
-      if (!kit) {
-        return {
-          ok: false,
-          error: "حدّد kit أولاً.",
-          kits: listStarterKits(),
-        };
-      }
-      const contract = contentContract(kit);
-      if (!contract) return { ok: false, error: `طقم غير معروف: ${kit}`, kits: listStarterKits() };
-
-      const dir = (direction ? getDirection(direction) : null) ?? directionsForKit(kit)[0] ?? null;
-      if (!dir) return { ok: false, error: "تعذّر تحديد اتجاه بصري لهذا الطقم." };
-
-      if (plan) {
-        return {
-          ok: true,
-          mode: "plan",
-          kit: {
-            id: contract.kit.id,
-            name: contract.kit.name,
-            required: contract.kit.required,
-            acceptance: contract.kit.acceptance,
-            avoid: contract.kit.avoid,
-          },
-          direction: { id: dir.id, name: dir.name, signature: dir.signature, avoid: dir.avoid },
-          pages: contract.pages,
-          copyContract: contract.kit.copyContract,
-          next: `اكتب كل النصوص العربية الحقيقية الآن وأعد turbo_build بـ plan=false و kit=${kit} و direction=${dir.id} مع brand و copy كاملة (لا تترك أي مفتاح فارغاً ولا نصاً عاماً).`,
-        };
-      }
-
-      if (!brandName.trim()) return { ok: false, error: "brandName مطلوب." };
-
-      const composed = composeSite({
-        kitId: kit,
-        brand: {
-          name: brandName,
-          tagline: tagline || contract.kit.name,
-          email: email || "info@example.com",
-          phone: phone || "",
-        },
-        copy,
-      });
-      if (!composed) return { ok: false, error: "تعذّر التركيب." };
-      if (composed.missing.length) {
-        return {
-          ok: false,
-          mode: "missing_copy",
-          missing: composed.missing,
-          error: "نصوص ناقصة — أعد turbo_build بـ plan=false بعد ملء كل المفاتيح المذكورة.",
-        };
-      }
-
-      // 1) عقد التصميم: الطقم + الاتجاه
-      await putDoc(
-        KIT_DOC,
-        [
-          `# طقم البداية المعتمد`,
-          `id: ${contract.kit.id}`,
-          `name: ${contract.kit.name}`,
-          `personality: ${contract.kit.personality}`,
-          `baseColor: ${contract.kit.baseColor}`,
-          ``,
-          `## الأقسام الإلزامية`,
-          ...contract.kit.required.map((r) => `- ${r}`),
-          ``,
-          `## معايير القبول`,
-          ...contract.kit.acceptance.map((a) => `- ${a}`),
-          ``,
-          `## محظورات`,
-          ...contract.kit.avoid.map((a) => `- ${a}`),
-        ].join("\n"),
-      );
-      await putDoc(
-        DIRECTION_DOC,
-        [
-          `# الاتجاه البصري المعتمد`,
-          `id: ${dir.id}`,
-          `name: ${dir.name}`,
-          `personality: ${dir.personality}`,
-          `baseColor: ${dir.baseColor}`,
-          `signature: ${dir.signature}`,
-          ``,
-          `## محظورات هذا الاتجاه`,
-          ...dir.avoid.map((a) => `- ${a}`),
-        ].join("\n"),
-      );
-
-      // 2) الهوية + مكتبة المكوّنات
-      const brandFiles = buildBrandKit({
-        brandName,
-        personality: dir.personality,
-        baseColor: dir.baseColor,
-        locale: "ar",
-        scheme: "light",
-        logoStyle: "monogram",
-      });
-
-      const all = [...brandFiles.files, ...uiLibraryFiles(), ...composed.files];
-      for (const file of all) await putDoc(file.path, file.content);
-      const activation = await activateSavedWorkspace(all.map((file) => file.path));
-      designContractReady = true;
-
-      // 3) تدقيق نصوص حتمي لكل صفحة
-      const audits = composed.files
-        .filter((f) => f.path.endsWith(".html"))
-        .map((f) => {
-          const a = auditCopy(f.content, { path: f.path });
-          return {
-            path: f.path,
-            ok: a.ok,
-            score: a.score,
-            issues: a.issues.filter((i) => i.level === "error").slice(0, 5),
-          };
-        });
-      const clean = audits.every((a) => a.ok);
-
-      return {
-        ok: true,
-        mode: "built",
-        written: all.map((f) => f.path),
-        direction: dir.id,
-        palette: brandFiles.palette,
-        runtime: activation,
-        copyAudit: audits,
-        next: clean
-          ? "الموقع مكتوب كاملاً. نفّذ الآن: auto_repair ← run_checks ← browser_check (designGate ≥ 85) ← design_review ← seo_kit ← publish_site."
-          : "عالج ملاحظات copyAudit بـ edit_file على الصفحات المذكورة، ثم أكمل: run_checks ← browser_check ← design_review ← publish_site.",
-      };
-    },
-  });
-
   const envList = tool({
     description: "يسرد أسماء مفاتيح/متغيّرات هذا المشروع المحفوظة (بدون قيمها).",
     inputSchema: z.object({}),
@@ -2596,21 +2373,21 @@ export function workspaceTools(
 
   const dbMigrate = tool({
     description:
-      "أداة احترافية لهجرة قواعد البيانات. تنفّذ أمر SQL (DDL/DML) على قاعدة بيانات المشروع وتحفظه فوراً كملف هجرة في supabase/migrations/ لتوثيقه وتتبعه في Git.",
+      "أداة احترافية لهجرة قواعد البيانات. تنفّذ أمر SQL (DDL/DML) على قاعدة بيانات المشروع وتحفظه فوراً كملف هجرة (Migration) في مجلد supabase/migrations/ لتوثيقه وتتبعه في Git.",
     inputSchema: z.object({
       sql: z.string().describe("جملة أو جمل SQL كاملة (CREATE TABLE، فهارس، دوال، إلخ)"),
       reason: z.string().describe("سبب هذا التغيير أو وصف مختصر له (سيُستخدم كاسم للملف)"),
     }),
     execute: async ({ sql, reason }) => {
       const pid = guard().projectId;
-      const { getTargetConfig, projectSchema, targetRunSql } =
-        await import("@/lib/target-supabase.server");
       const cfg = getTargetConfig();
       if (!cfg) return { ok: false, error: "قاعدة البيانات غير مهيأة" };
       const schema = projectSchema(pid);
 
       try {
         const result = await targetRunSql(cfg, schema, sql);
+
+        // كتابة ملف الهجرة
         const timestamp = new Date()
           .toISOString()
           .replace(/[-:T.]/g, "")
@@ -2620,7 +2397,9 @@ export function workspaceTools(
           .toLowerCase()
           .slice(0, 30);
         const filename = `supabase/migrations/${timestamp}_${safeReason}.sql`;
+
         const fileResult = await writeOne(filename, sql, `Migration: ${reason}`);
+
         return {
           ok: true,
           executed: true,
@@ -2636,7 +2415,7 @@ export function workspaceTools(
 
   const runE2eTests = tool({
     description:
-      "أداة اختبار الجودة التفاعلي (QA). تكتب وتنفّذ اختبار Playwright (E2E) للتأكد من تفاعل المكونات الفعلي (نقر أزرار، تعبئة نماذج، مسارات التنقل) وتعيد النتيجة.",
+      "أداة ذكية لاختبار الجودة التفاعلي (QA). تكتب وتنفّذ اختبار Playwright (E2E) للتأكد من تفاعل المكونات الفعلي (نقر أزرار، تعبئة نماذج، مسارات التنقل) وتعيد النتيجة. استخدمها لضمان جودة واحترافية الموقع.",
     inputSchema: z.object({
       testName: z.string().describe("اسم الاختبار (مثل login_flow)"),
       script: z.string().describe("كود Playwright الكامل (استيراد test و expect وكتابة الفحص)"),
@@ -2645,20 +2424,21 @@ export function workspaceTools(
       const pid = guard().projectId;
       const safeName = testName.replace(/[^a-z0-9_]/gi, "_").toLowerCase();
       const filename = `tests/${safeName}.spec.ts`;
+
+      // حفظ سكريبت الاختبار في المشروع
       await writeOne(filename, script, `E2E Test: ${testName}`);
+
+      // تشغيله في الحاوية
       const result = await runtimeExec(pid, `npx playwright test ${filename}`);
       return {
-        ok: result.ok,
+        ok: result.exitCode === 0,
         filename,
-        exitCode: result.exitCode,
         output: result.output.trim().slice(-2000),
       };
     },
   });
 
   return {
-    db_migrate: dbMigrate,
-    run_e2e_tests: runE2eTests,
     write_file: writeFile,
     write_files: writeFiles,
 
@@ -2699,12 +2479,13 @@ export function workspaceTools(
     generate_image: generateImage,
     ask_user: askUser,
     design_directions: designDirectionsTool,
-    turbo_build: turboBuild,
 
     env_list: envList,
     env_get: envGet,
     memory_save: memorySave,
     memory_list: memoryList,
     memory_delete: memoryDelete,
+    db_migrate: dbMigrate,
+    run_e2e_tests: runE2eTests,
   };
 }

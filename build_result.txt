@@ -1,0 +1,37 @@
+8;5;249me[0m[38;5;249mn[0m[38;5;249mt[0m[38;5;249ms[0m[38;5;249m/[0m[38;5;249ma[0m[38;5;249mg[0m[38;5;249me[0m[38;5;249mn[0m[38;5;249mt[0m[38;5;249m/[0m[38;5;249ma[0m[38;5;249ms[0m[38;5;249mk[0m[38;5;249m-[0m[38;5;249mu[0m[38;5;249ms[0m[38;5;249me[0m[38;5;249mr[0m[38;5;249m-[0m[38;5;249mc[0m[38;5;249ma[0m[38;5;249mr[0m[38;5;249md[0m[38;5;249m"[0m[38;5;249m;[0m
+#15 15.37  [38;5;240m   │[0m ───┬──  
+#15 15.37  [38;5;240m   │[0m    ╰──── 
+#15 15.37 [38;5;246m────╯[0m
+#15 15.37 
+#15 15.37 [31m[builtin:vite-transform] [0mExpected `,` or `}` but found `{`
+#15 15.37     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m src/components/agent/chat-window.tsx:55:8 [38;5;246m][0m
+#15 15.37     [38;5;246m│[0m
+#15 15.37  [38;5;246m54 │[0m [38;5;249mi[0m[38;5;249mm[0m[38;5;249mp[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249mt[0m[38;5;249m [0m{
+#15 15.37  [38;5;240m   │[0m        ┬  
+#15 15.37  [38;5;240m   │[0m        ╰── Opened here
+#15 15.37  [38;5;246m55 │[0m [38;5;249mi[0m[38;5;249mm[0m[38;5;249mp[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249mt[0m[38;5;249m [0m{[38;5;249m [0m[38;5;249mA[0m[38;5;249ms[0m[38;5;249mk[0m[38;5;249mU[0m[38;5;249ms[0m[38;5;249me[0m[38;5;249mr[0m[38;5;249mC[0m[38;5;249ma[0m[38;5;249mr[0m[38;5;249md[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249mt[0m[38;5;249my[0m[38;5;249mp[0m[38;5;249me[0m[38;5;249m [0m[38;5;249mA[0m[38;5;249ms[0m[38;5;249mk[0m[38;5;249mA[0m[38;5;249mt[0m[38;5;249mt[0m[38;5;249ma[0m[38;5;249mc[0m[38;5;249mh[0m[38;5;249mm[0m[38;5;249me[0m[38;5;249mn[0m[38;5;249mt[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249mt[0m[38;5;249my[0m[38;5;249mp[0m[38;5;249me[0m[38;5;249m [0m[38;5;249mA[0m[38;5;249ms[0m[38;5;249mk[0m[38;5;249mU[0m[38;5;249ms[0m[38;5;249me[0m[38;5;249mr[0m[38;5;249mP[0m[38;5;249ma[0m[38;5;249my[0m[38;5;249ml[0m[38;5;249mo[0m[38;5;249ma[0m[38;5;249md[0m[38;5;249m [0m[38;5;249m}[0m[38;5;249m [0m[38;5;249mf[0m[38;5;249mr[0m[38;5;249mo[0m[38;5;249mm[0m[38;5;249m [0m[38;5;249m"[0m[38;5;249m@[0m[38;5;249m/[0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mm[0m[38;5;249mp[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249me[0m[38;5;249mn[0m[38;5;249mt[0m[38;5;249ms[0m[38;5;249m/[0m[38;5;249ma[0m[38;5;249mg[0m[38;5;249me[0m[38;5;249mn[0m[38;5;249mt[0m[38;5;249m/[0m[38;5;249ma[0m[38;5;249ms[0m[38;5;249mk[0m[38;5;249m-[0m[38;5;249mu[0m[38;5;249ms[0m[38;5;249me[0m[38;5;249mr[0m[38;5;249m-[0m[38;5;249mc[0m[38;5;249ma[0m[38;5;249mr[0m[38;5;249md[0m[38;5;249m"[0m[38;5;249m;[0m
+#15 15.37  [38;5;240m   │[0m        ┬  
+#15 15.37  [38;5;240m   │[0m        ╰── `,` or `}` expected
+#15 15.37 [38;5;246m────╯[0m
+#15 15.37 
+#15 15.37     at aggregateBindingErrorsIntoJsError (/app/node_modules/rolldown/dist/shared/error-DFGNOCle.mjs:48:22)
+#15 15.37     at unwrapBindingResult (/app/node_modules/rolldown/dist/shared/error-DFGNOCle.mjs:18:128)
+#15 15.37     at #build (/app/node_modules/rolldown/dist/shared/rolldown-build-CdF8HAHX.mjs:3276:34)
+#15 15.37     at processTicksAndRejections (native:7:39) {
+#15 15.37   errors: [Getter/Setter]
+#15 15.37 }
+#15 15.57 error: script "build" exited with code 1
+#15 ERROR: process "/bin/sh -c bun run build" did not complete successfully: exit code: 1
+------
+ > [builder 6/6] RUN bun run build:
+15.37  [38;5;240m   │[0m        ╰── `,` or `}` expected
+15.37 [38;5;246m────╯[0m
+15.37 
+15.37     at aggregateBindingErrorsIntoJsError (/app/node_modules/rolldown/dist/shared/error-DFGNOCle.mjs:48:22)
+15.37     at unwrapBindingResult (/app/node_modules/rolldown/dist/shared/error-DFGNOCle.mjs:18:128)
+15.37     at #build (/app/node_modules/rolldown/dist/shared/rolldown-build-CdF8HAHX.mjs:3276:34)
+15.37     at processTicksAndRejections (native:7:39) {
+15.37   errors: [Getter/Setter]
+15.37 }
+15.57 error: script "build" exited with code 1
+------

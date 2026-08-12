@@ -530,3 +530,137 @@ export function runChecks(files: WorkspaceFile[]): CheckReport {
         : `فشل الفحص: ${errors} خطأ و ${warnings} تحذير في ${files.length} ملف`,
   };
 }
+
+export function calculateQualityReport(files: Record<string, string>) {
+  let designScore = 100;
+  let accessibilityScore = 100;
+  let performanceScore = 100;
+  let rtlScore = 100;
+  const issues: Array<{ severity: 'error' | 'warning' | 'info', message: string, file: string }> = [];
+
+  const cssFiles = Object.entries(files).filter(([path]) => path.endsWith('.css'));
+  const htmlFiles = Object.entries(files).filter(([path]) => path.endsWith('.html') || path.endsWith('.htm'));
+  const jsFiles = Object.entries(files).filter(([path]) => path.endsWith('.js') || path.endsWith('.ts') || path.endsWith('.jsx') || path.endsWith('.tsx'));
+  const allImages = Object.entries(files).filter(([path]) => /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(path));
+
+  for (const [path, content] of cssFiles) {
+    if (!/--[a-zA-Z0-9-]+/.test(content)) {
+      designScore -= 10;
+      issues.push({ severity: 'error', message: 'Missing CSS custom properties (--var).', file: path });
+    }
+    const mediaQueries = (content.match(/@media/g) || []).length;
+    if (mediaQueries < 2) {
+      designScore -= 10;
+      issues.push({ severity: 'error', message: 'Need at least 2 responsive breakpoints (@media).', file: path });
+    }
+    if (!/:hover|:focus/i.test(content)) {
+      designScore -= 10;
+      issues.push({ severity: 'error', message: 'Missing hover/focus states.', file: path });
+    }
+    if (!/transition:/i.test(content)) {
+      designScore -= 10;
+      issues.push({ severity: 'error', message: 'Missing smooth transitions.', file: path });
+    }
+    if (!/gradient/i.test(content)) {
+      designScore -= 5;
+      issues.push({ severity: 'info', message: 'Recommended: gradient usage.', file: path });
+    }
+    if (!/box-shadow/i.test(content)) {
+      designScore -= 5;
+      issues.push({ severity: 'info', message: 'Recommended: box-shadow usage.', file: path });
+    }
+    if (/backdrop-filter/i.test(content)) {
+      designScore = Math.min(100, designScore + 5);
+    }
+    if (/left\s*:|right\s*:|margin-left|margin-right|padding-left|padding-right/.test(content)) {
+      rtlScore -= 20;
+      issues.push({ severity: 'error', message: 'Hardcoded left/right in CSS. Use logical properties.', file: path });
+    }
+    if (/text-align\s*:\s*(left|right)/.test(content)) {
+      rtlScore -= 10;
+      issues.push({ severity: 'error', message: 'text-align: left/right used. Use start/end.', file: path });
+    }
+    if (content.length > 50000) {
+      performanceScore -= 10;
+      issues.push({ severity: 'warning', message: 'CSS file > 50KB.', file: path });
+    }
+  }
+
+  for (const [path, content] of htmlFiles) {
+    const imgs = content.match(/<img\b[^>]*>/gi) || [];
+    for (const img of imgs) {
+      if (!/\salt\s*=/i.test(img)) {
+        accessibilityScore -= 10;
+        issues.push({ severity: 'error', message: 'Image missing alt text.', file: path });
+      }
+    }
+    const inputs = content.match(/<input\b[^>]*>/gi) || [];
+    if (inputs.length > 0 && !/<label|aria-label/i.test(content)) {
+      accessibilityScore -= 10;
+      issues.push({ severity: 'error', message: 'Form inputs missing labels.', file: path });
+    }
+    if (!/href=["']#main["']|skip/i.test(content)) {
+       accessibilityScore -= 5;
+       issues.push({ severity: 'warning', message: 'Missing skip navigation link.', file: path });
+    }
+    const h1Count = (content.match(/<h1\b/gi) || []).length;
+    const h2Count = (content.match(/<h2\b/gi) || []).length;
+    if (h2Count > 0 && h1Count === 0) {
+      accessibilityScore -= 10;
+      issues.push({ severity: 'error', message: 'Improper heading hierarchy (h2 without h1).', file: path });
+    }
+    if (!/<html[^>]*\sdir\s*=\s*["']rtl["']/i.test(content)) {
+      rtlScore -= 20;
+      issues.push({ severity: 'error', message: 'Missing dir="rtl" on html element.', file: path });
+    }
+    const externalScripts = (content.match(/<script\b[^>]*\ssrc\s*=\s*["'](https?:\/\/[^"']+)["']/gi) || []).length;
+    if (externalScripts > 3) {
+      performanceScore -= 20;
+      issues.push({ severity: 'error', message: 'More than 3 external scripts.', file: path });
+    }
+  }
+
+  const hasFonts = cssFiles.some(([, c]) => /@font-face/i.test(c)) || htmlFiles.some(([, c]) => /fonts\.(googleapis|gstatic)\.com/i.test(c));
+  if (!hasFonts) {
+    designScore -= 10;
+    issues.push({ severity: 'error', message: 'Proper font loading (Google Fonts or @font-face) is required.', file: 'global' });
+  }
+
+  for (const [path, content] of jsFiles) {
+    if (content.length > 100000) {
+      performanceScore -= 10;
+      issues.push({ severity: 'warning', message: 'JS file > 100KB.', file: path });
+    }
+  }
+
+  const hasFocus = cssFiles.some(([, c]) => /:focus/.test(c)) || htmlFiles.some(([, c]) => /:focus/.test(c));
+  if (!hasFocus) {
+    accessibilityScore -= 10;
+    issues.push({ severity: 'error', message: 'Missing focus indicators on interactive elements.', file: 'global' });
+  }
+
+  for (const [path, content] of allImages) {
+    if (content.length > 500 * 1024) {
+      performanceScore -= 20;
+      issues.push({ severity: 'error', message: 'Image > 500KB.', file: path });
+    }
+  }
+  
+  designScore = Math.max(0, designScore);
+  accessibilityScore = Math.max(0, accessibilityScore);
+  performanceScore = Math.max(0, performanceScore);
+  rtlScore = Math.max(0, rtlScore);
+
+  const overallScore = Math.round((designScore + accessibilityScore + performanceScore + rtlScore) / 4);
+
+  return {
+    designScore,
+    accessibilityScore,
+    performanceScore,
+    rtlScore,
+    overallScore,
+    issues,
+    passed: overallScore >= 85
+  };
+}
+

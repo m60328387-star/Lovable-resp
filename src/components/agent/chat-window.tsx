@@ -51,12 +51,11 @@ import { enqueueAgentJob } from "@/lib/agent-jobs.functions";
 import { toolDetail, toolFailed, toolLabel } from "@/lib/tool-display";
 import { pushTerminalEvent } from "@/lib/terminal-bus";
 import { ResizeHandle, useResizablePanel } from "@/components/agent/split-pane";
-import {
-  AskUserCard,
-  type AskAttachment,
-  type AskUserPayload,
-} from "@/components/agent/ask-user-card";
+import { AskUserCard, type AskAttachment, type AskUserPayload } from "@/components/agent/ask-user-card";
 import { cn } from "@/lib/utils";
+import { useProjectEvents } from "@/lib/sse-events";
+import { AgentLiveLog, type LogEvent } from "@/components/agent/agent-live-log";
+import { CostMeter } from "@/components/agent/cost-meter";
 
 type Attachment = { filename: string; mediaType: string; url: string };
 
@@ -114,23 +113,40 @@ function titleFrom(text: string) {
 }
 
 function ReasoningBlock({ text, streaming }: { text: string; streaming: boolean }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(streaming);
+
+  // Auto-open if it starts streaming again
+  useEffect(() => {
+    if (streaming) setOpen(true);
+  }, [streaming]);
+
   if (!text.trim()) return null;
   return (
-    <div className="rounded-lg border border-dashed bg-surface/70">
+    <div className="glass rounded-xl overflow-hidden transition-all duration-300">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 px-3 py-2 text-start text-[12px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
       >
-        <Brain className="size-3.5 text-primary" />
-        <span>{streaming ? "الوكيل يفكّر…" : "سلسلة التفكير"}</span>
-        <span className="ms-auto font-mono text-[10px]">{open ? "إخفاء" : "عرض"}</span>
+        <Brain
+          className={cn(
+            "size-3.5",
+            streaming ? "text-primary animate-pulse" : "text-muted-foreground",
+          )}
+        />
+        <span className={streaming ? "text-foreground" : ""}>
+          {streaming ? "الوكيل يفكّر…" : "سلسلة التفكير"}
+        </span>
+        <span className="ms-auto font-mono text-[10px] bg-surface-strong px-1.5 py-0.5 rounded-md">
+          {open ? "إخفاء" : "عرض"}
+        </span>
       </button>
       {open && (
-        <p className="whitespace-pre-wrap border-t px-3 py-2 text-[12px] leading-relaxed text-muted-foreground">
-          {text}
-        </p>
+        <div className="border-t border-border/50 bg-black/5 dark:bg-black/20 p-3">
+          <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-muted-foreground/80 font-mono">
+            {text}
+          </p>
+        </div>
       )}
     </div>
   );
@@ -296,17 +312,24 @@ function WorkspaceChip({
   note?: string | undefined;
 }) {
   return (
-    <div className="rounded-lg border bg-surface/70 px-3 py-2">
+    <div className="glass rounded-xl px-3 py-2 transition-all hover:bg-surface-strong/50">
       <div className="flex items-center gap-2">
         <Icon className="size-3.5 shrink-0 text-primary" />
-        <code dir="ltr" className="min-w-0 flex-1 truncate font-mono text-[11px]">
+        <code
+          dir="ltr"
+          className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground/90"
+        >
           {title}
         </code>
-        <span className="rounded-md bg-card px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+        <span className="glass-strong rounded-md px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground shadow-sm">
           {meta}
         </span>
       </div>
-      {note && <p className="mt-1 text-[11px] text-muted-foreground">{note}</p>}
+      {note && (
+        <p className="mt-1.5 text-[11px] text-muted-foreground/80 leading-relaxed border-t border-border/40 pt-1.5">
+          {note}
+        </p>
+      )}
     </div>
   );
 }
@@ -415,6 +438,25 @@ function ChatSurface({
   const { mode, setMode } = useMode(threadId);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { events: sseEvents } = useProjectEvents(threadId);
+
+  useEffect(() => {
+    if (sseEvents.length > 0) {
+      void queryClient.invalidateQueries({ queryKey: ["conversation", threadId] });
+      void queryClient.invalidateQueries({ queryKey: ["workspace", threadId] });
+    }
+  }, [sseEvents, queryClient, threadId]);
+
+  const logEvents: LogEvent[] = useMemo(() => {
+    return sseEvents.map((e, i) => ({
+      id: String(i),
+      type: e.type === "agent:terminal" ? "terminal" : e.type === "agent:file-change" ? "file" : "package",
+      message: typeof e.payload === "string" ? e.payload : (e.payload as any)?.message || String(e.type),
+      timestamp: new Date(e.timestamp).toLocaleTimeString("ar"),
+      status: e.type === "agent:error" ? "error" : e.type === "agent:step" ? "running" : "done"
+    }));
+  }, [sseEvents]);
 
   const addFiles = useCallback(async (list: FileList | null) => {
     if (!list || list.length === 0) return;
@@ -841,13 +883,18 @@ function ChatSurface({
             {messages.map((message) => (
               <div
                 key={message.id}
-                className={cn("flex gap-3", message.role === "user" ? "justify-start" : "")}
+                className={cn(
+                  "flex gap-3 transition-opacity duration-300",
+                  message.role === "user"
+                    ? "justify-start"
+                    : "animate-in fade-in slide-in-from-bottom-2",
+                )}
               >
                 {message.role === "user" ? (
                   <div className="ms-auto max-w-[85%] space-y-2">
                     <UserAttachments message={message} />
                     {message.parts.some((p) => p.type === "text") && (
-                      <div className="rounded-2xl rounded-se-sm bg-primary px-4 py-2.5 text-[14px] leading-relaxed text-primary-foreground shadow-soft">
+                      <div className="rounded-2xl rounded-se-sm bg-gradient-to-br from-primary to-primary/80 px-4 py-2.5 text-[14px] leading-relaxed text-primary-foreground shadow-lg shadow-primary/20 backdrop-blur-md">
                         {message.parts
                           .map((p) => (p.type === "text" ? p.text : ""))
                           .join("")
@@ -856,12 +903,12 @@ function ChatSurface({
                     )}
                   </div>
                 ) : (
-                  <div className="w-full">
+                  <div className="w-full space-y-2">
                     <div className="mb-2 flex items-center gap-2">
-                      <span className="grid size-6 place-items-center rounded-md bg-primary/10 font-mono text-[10px] font-bold text-primary">
+                      <span className="grid size-6 place-items-center rounded-lg bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20 font-mono text-[10px] font-bold text-primary shadow-[0_0_10px_rgba(var(--primary),0.2)]">
                         W
                       </span>
-                      <span className="text-[12px] font-semibold text-muted-foreground">
+                      <span className="text-[12px] font-semibold text-foreground/90 tracking-wide">
                         Weaver
                       </span>
                     </div>
@@ -884,6 +931,10 @@ function ChatSurface({
                     : currentActivity(messages[messages.length - 1])
                 }
               />
+            )}
+            
+            {logEvents.length > 0 && (
+              <AgentLiveLog events={logEvents} className="max-h-64 mt-4" />
             )}
 
             {!isBusy &&
@@ -925,7 +976,7 @@ function ChatSurface({
           </div>
         </div>
 
-        <div className="border-t bg-background/80 backdrop-blur">
+        <div className="border-t border-border/30 bg-background/50 backdrop-blur-3xl">
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -962,7 +1013,7 @@ function ChatSurface({
                 ))}
               </div>
             )}
-            <div className="flex items-end gap-2 rounded-2xl border bg-card p-2 shadow-soft focus-within:ring-2 focus-within:ring-ring/40">
+            <div className="flex items-end gap-2 rounded-3xl border border-border/50 bg-black/5 dark:bg-white/5 p-2 shadow-lg backdrop-blur-xl focus-within:ring-2 focus-within:ring-primary/30 focus-within:border-primary/50 transition-all duration-300">
               <input
                 ref={fileInputRef}
                 type="file"

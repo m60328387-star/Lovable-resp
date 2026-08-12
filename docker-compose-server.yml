@@ -25,6 +25,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
+
       - weaver
     healthcheck:
       test:
@@ -103,6 +104,7 @@ services:
       app:
         condition: service_healthy
 
+
   db:
     image: postgres:17-alpine
     container_name: weaver-db
@@ -162,7 +164,7 @@ services:
     depends_on:
       app:
         condition: service_started
-    command: '/bin/sh -c ''sh /init-ssl.sh && nginx -g "daemon off;"'''
+    command: "/bin/sh -c 'sh /init-ssl.sh && nginx -g \"daemon off;\"'"
 
 volumes:
   pgdata:

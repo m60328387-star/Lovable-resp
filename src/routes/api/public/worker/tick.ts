@@ -78,6 +78,7 @@ export const Route = createFileRoute("/api/public/worker/tick")({
           designPassed: false,
           published: false,
           acted: false,
+          e2ePassed: false,
         };
 
         if (projectId) {

@@ -1,0 +1,257 @@
+#1 [internal] load local bake definitions
+#1 reading from stdin 1.07kB done
+#1 DONE 0.0s
+
+#2 [runtime internal] load build definition from Dockerfile
+#2 transferring dockerfile: 786B 0.0s done
+#2 DONE 0.0s
+
+#3 [app internal] load build definition from Dockerfile
+#3 transferring dockerfile: 691B 0.0s done
+#3 DONE 0.1s
+
+#4 [app] resolve image config for docker-image://docker.io/docker/dockerfile:1
+#4 DONE 0.9s
+
+#5 [runtime internal] load metadata for docker.io/library/node:22-bookworm-slim
+#5 DONE 0.9s
+
+#6 [runtime internal] load .dockerignore
+#6 transferring context: 2B 0.0s done
+#6 DONE 0.1s
+
+#7 [app] docker-image://docker.io/docker/dockerfile:1@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89
+#7 resolve docker.io/docker/dockerfile:1@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89
+#7 resolve docker.io/docker/dockerfile:1@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89 0.2s done
+#7 CACHED
+
+#8 [runtime internal] load build context
+#8 DONE 0.0s
+
+#9 [runtime 1/7] FROM docker.io/library/node:22-bookworm-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436
+#9 resolve docker.io/library/node:22-bookworm-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436 0.1s done
+#9 DONE 0.2s
+
+#8 [runtime internal] load build context
+#8 transferring context: 133B done
+#8 DONE 0.0s
+
+#10 [runtime 5/7] RUN npm install --omit=dev --no-audit --no-fund   && npx playwright install --with-deps chromium   && rm -rf /root/.npm
+#10 CACHED
+
+#11 [runtime 6/7] COPY server.mjs browser.mjs agent-browser.mjs ./
+#11 CACHED
+
+#12 [runtime 2/7] RUN apt-get update   && apt-get install -y --no-install-recommends git curl ca-certificates python3 make g++   && rm -rf /var/lib/apt/lists/*
+#12 CACHED
+
+#13 [runtime 3/7] WORKDIR /runtime
+#13 CACHED
+
+#14 [runtime 4/7] COPY package.json ./
+#14 CACHED
+
+#15 [runtime 7/7] RUN mkdir -p /workspaces
+#15 CACHED
+
+#16 [runtime] exporting to image
+#16 exporting layers 0.0s done
+#16 exporting manifest sha256:806b2446fa3d6befe7a47ab5256fc4a0b22515f9dfdb1d2e81bec188f6848ac1 0.0s done
+#16 exporting config sha256:ab88c0988bc1c485cb6fb5139df648c58f950a393b8b72504ae1a2b66d13e82b
+#16 exporting config sha256:ab88c0988bc1c485cb6fb5139df648c58f950a393b8b72504ae1a2b66d13e82b 0.0s done
+#16 exporting attestation manifest sha256:f56ec78613225c80627a72e6b05aabf339aa1c6b181f3bff353a6cbb6f80637c
+#16 exporting attestation manifest sha256:f56ec78613225c80627a72e6b05aabf339aa1c6b181f3bff353a6cbb6f80637c 0.2s done
+#16 exporting manifest list sha256:42d73e949042478a2ab381144c2d2e17501040ce1a5a56b000f371050e67910e 0.1s done
+#16 naming to docker.io/library/deploy-runtime:latest 0.0s done
+#16 unpacking to docker.io/library/deploy-runtime:latest 0.1s done
+#16 DONE 0.8s
+
+#17 [app internal] load metadata for docker.io/library/node:22-alpine
+#17 DONE 0.3s
+
+#18 [app internal] load metadata for docker.io/oven/bun:1
+#18 ...
+
+#19 [runtime] resolving provenance for metadata file
+#19 DONE 0.2s
+
+#18 [app internal] load metadata for docker.io/oven/bun:1
+#18 DONE 0.9s
+
+#20 [app internal] load .dockerignore
+#20 transferring context: 195B 0.0s done
+#20 DONE 0.0s
+
+#21 [app internal] load build context
+#21 DONE 0.0s
+
+#22 [app builder 1/6] FROM docker.io/oven/bun:1@sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4
+#22 resolve docker.io/oven/bun:1@sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4 0.1s done
+#22 DONE 0.1s
+
+#23 [app stage-1 1/3] FROM docker.io/library/node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32
+#23 resolve docker.io/library/node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32
+#23 resolve docker.io/library/node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 0.1s done
+#23 DONE 0.1s
+
+#21 [app internal] load build context
+#21 transferring context: 156.84kB 0.1s done
+#21 DONE 0.1s
+
+#24 [app builder 2/6] WORKDIR /app
+#24 CACHED
+
+#25 [app builder 3/6] COPY package.json bun.lock* package-lock.json* ./
+#25 CACHED
+
+#26 [app builder 4/6] RUN bun install --frozen-lockfile || bun install
+#26 CACHED
+
+#27 [app builder 5/6] COPY . .
+#27 DONE 4.9s
+
+#28 [app builder 6/6] RUN bun run build
+#28 2.670 $ vite build
+#28 9.040 The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+#28 10.93 vite v8.2.0 building client environment for production...
+#28 11.04 [2Ktransforming...[plugin tanstack-start-core::server-fn:client] /app/src/lib/auth.functions.ts:25:34 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 16.17 [plugin tanstack-start-core::server-fn:client] /app/src/lib/monitor.functions.ts:165:28 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 16.19 [plugin tanstack-start-core::server-fn:client] /app/src/lib/agent-jobs.functions.ts:40:32 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 16.20 [plugin tanstack-start-core::server-fn:client] /app/src/lib/agent-jobs.functions.ts:66:32 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 16.20 [plugin tanstack-start-core::server-fn:client] /app/src/lib/agent-jobs.functions.ts:113:31 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 16.20 [plugin tanstack-start-core::server-fn:client] /app/src/lib/agent-jobs.functions.ts:222:30 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 16.20 [plugin tanstack-start-core::server-fn:client] /app/src/lib/connectors.functions.ts:21:43 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 16.20 [plugin tanstack-start-core::server-fn:client] /app/src/lib/connectors.functions.ts:48:37 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 16.20 [plugin tanstack-start-core::server-fn:client] /app/src/lib/connectors.functions.ts:74:30 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 16.20 [plugin tanstack-start-core::server-fn:client] /app/src/lib/templates.functions.ts:7:30 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 16.21 [plugin tanstack-start-core::server-fn:client] /app/src/lib/infra-health.functions.ts:15:36 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 16.23 [plugin tanstack-start-core::server-fn:client] /app/src/lib/platform.functions.ts:39:34 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 16.23 [plugin tanstack-start-core::server-fn:client] /app/src/lib/platform.functions.ts:52:33 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 16.23 [plugin tanstack-start-core::server-fn:client] /app/src/lib/platform.functions.ts:65:38 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 16.23 [plugin tanstack-start-core::server-fn:client] /app/src/lib/platform.functions.ts:118:38 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 16.23 [plugin tanstack-start-core::server-fn:client] /app/src/lib/platform.functions.ts:174:37 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 16.23 [plugin tanstack-start-core::server-fn:client] /app/src/lib/platform.functions.ts:190:37 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 16.23 [plugin tanstack-start-core::server-fn:client] /app/src/lib/platform.functions.ts:217:31 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 16.23 [plugin tanstack-start-core::server-fn:client] /app/src/lib/platform.functions.ts:275:33 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 16.23 [plugin tanstack-start-core::server-fn:client] /app/src/lib/platform.functions.ts:294:30 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 16.24 [plugin tanstack-start-core::server-fn:client] /app/src/lib/platform.functions.ts:386:37 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 16.24 [plugin tanstack-start-core::server-fn:client] /app/src/lib/platform.functions.ts:439:34 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 16.25 [plugin tanstack-start-core::server-fn:client] /app/src/lib/platform.functions.ts:466:38 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 16.25 [plugin tanstack-start-core::server-fn:client] /app/src/lib/platform.functions.ts:511:30 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 16.61 [plugin tanstack-start-core::server-fn:client] /app/src/lib/usage.functions.ts:6:25 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 18.74 [plugin tanstack-start-core::server-fn:client] /app/src/lib/schedules.functions.ts:19:31 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 18.74 [plugin tanstack-start-core::server-fn:client] /app/src/lib/schedules.functions.ts:48:31 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 18.74 [plugin tanstack-start-core::server-fn:client] /app/src/lib/schedules.functions.ts:62:31 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 18.74 [plugin tanstack-start-core::server-fn:client] /app/src/lib/schedules.functions.ts:72:31 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 18.74 [plugin tanstack-start-core::server-fn:client] /app/src/lib/executors.functions.ts:38:31 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 18.74 [plugin tanstack-start-core::server-fn:client] /app/src/lib/executors.functions.ts:65:36 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 18.74 [plugin tanstack-start-core::server-fn:client] /app/src/lib/executors.functions.ts:80:31 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 18.74 [plugin tanstack-start-core::server-fn:client] /app/src/lib/custom-skills.functions.ts:36:32 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 18.74 [plugin tanstack-start-core::server-fn:client] /app/src/lib/custom-skills.functions.ts:77:34 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.14 [plugin tanstack-start-core::server-fn:client] /app/src/lib/projects.functions.ts:40:30 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.14 [plugin tanstack-start-core::server-fn:client] /app/src/lib/projects.functions.ts:70:30 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.14 [plugin tanstack-start-core::server-fn:client] /app/src/lib/projects.functions.ts:85:30 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.14 [plugin tanstack-start-core::server-fn:client] /app/src/lib/projects.functions.ts:120:32 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.14 [plugin tanstack-start-core::server-fn:client] /app/src/lib/projects.functions.ts:183:33 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.14 [plugin tanstack-start-core::server-fn:client] /app/src/lib/projects.functions.ts:220:25 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.14 [plugin tanstack-start-core::server-fn:client] /app/src/lib/projects.functions.ts:263:30 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.14 [plugin tanstack-start-core::server-fn:client] /app/src/lib/projects.functions.ts:298:33 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.14 [plugin tanstack-start-core::server-fn:client] /app/src/lib/projects.functions.ts:320:29 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.25 [plugin tanstack-start-core::server-fn:client] /app/src/lib/delivery.functions.ts:7:34 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.26 [plugin tanstack-start-core::server-fn:client] /app/src/lib/delivery.functions.ts:54:38 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.27 [plugin tanstack-start-core::server-fn:client] /app/src/lib/files.functions.ts:7:33 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.27 [plugin tanstack-start-core::server-fn:client] /app/src/lib/files.functions.ts:32:35 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.27 [plugin tanstack-start-core::server-fn:client] /app/src/lib/publish.functions.ts:16:32 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.27 [plugin tanstack-start-core::server-fn:client] /app/src/lib/publish.functions.ts:36:31 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.27 [plugin tanstack-start-core::server-fn:client] /app/src/lib/publish.functions.ts:102:33 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.28 [plugin tanstack-start-core::server-fn:client] /app/src/lib/analytics.functions.ts:6:33 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.29 [plugin tanstack-start-core::server-fn:client] /app/src/lib/checkpoints.functions.ts:8:32 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.29 [plugin tanstack-start-core::server-fn:client] /app/src/lib/checkpoints.functions.ts:22:33 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.29 [plugin tanstack-start-core::server-fn:client] /app/src/lib/checkpoints.functions.ts:46:34 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.29 [plugin tanstack-start-core::server-fn:client] /app/src/lib/checkpoints.functions.ts:92:33 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.29 [plugin tanstack-start-core::server-fn:client] /app/src/lib/project-secrets.functions.ts:11:35 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.29 [plugin tanstack-start-core::server-fn:client] /app/src/lib/project-secrets.functions.ts:29:33 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.29 [plugin tanstack-start-core::server-fn:client] /app/src/lib/project-secrets.functions.ts:58:36 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.35 [plugin tanstack-start-core::server-fn:client] /app/src/lib/import.functions.ts:17:37 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.37 [plugin tanstack-start-core::server-fn:client] /app/src/lib/runtime.functions.ts:32:33 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.37 [plugin tanstack-start-core::server-fn:client] /app/src/lib/runtime.functions.ts:43:37 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.37 [plugin tanstack-start-core::server-fn:client] /app/src/lib/runtime.functions.ts:53:34 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.37 [plugin tanstack-start-core::server-fn:client] /app/src/lib/runtime.functions.ts:68:32 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.37 [plugin tanstack-start-core::server-fn:client] /app/src/lib/runtime.functions.ts:78:31 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.37 [plugin tanstack-start-core::server-fn:client] /app/src/lib/runtime.functions.ts:83:31 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.37 [plugin tanstack-start-core::server-fn:client] /app/src/lib/runtime.functions.ts:90:33 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.37 [plugin tanstack-start-core::server-fn:client] /app/src/lib/runtime.functions.ts:95:38 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.37 [plugin tanstack-start-core::server-fn:client] /app/src/lib/runtime.functions.ts:101:39 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.47 [plugin tanstack-start-core::server-fn:client] /app/src/lib/domains.functions.ts:7:31 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.47 [plugin tanstack-start-core::server-fn:client] /app/src/lib/domains.functions.ts:24:35 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.48 [plugin tanstack-start-core::server-fn:client] /app/src/lib/domains.functions.ts:91:36 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.48 [plugin tanstack-start-core::server-fn:client] /app/src/lib/domains.functions.ts:132:35 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.54 [plugin tanstack-start-core::server-fn:client] /app/src/lib/browser.functions.ts:16:35 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.54 [plugin tanstack-start-core::server-fn:client] /app/src/lib/browser.functions.ts:33:32 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.54 [plugin tanstack-start-core::server-fn:client] /app/src/lib/browser.functions.ts:41:33 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.54 [plugin tanstack-start-core::server-fn:client] /app/src/lib/browser.functions.ts:70:32 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.54 [plugin tanstack-start-core::server-fn:client] /app/src/lib/browser.functions.ts:75:36 createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.
+#28 19.90 ✓ 2364 modules transformed.
+#28 19.93 ✗ Build failed in 8.98s
+#28 19.94 error during build:
+#28 19.94 Build failed with 2 errors:
+#28 19.94 
+#28 19.94 [31m[builtin:vite-transform] [0mInvalid Unicode escape sequence
+#28 19.94     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m src/lib/design-system.ts:52:38 [38;5;246m][0m
+#28 19.94     [38;5;246m│[0m
+#28 19.94  [38;5;246m52 │[0m [38;5;249me[0m[38;5;249mx[0m[38;5;249mp[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mP[0m[38;5;249mR[0m[38;5;249mE[0m[38;5;249mM[0m[38;5;249mI[0m[38;5;249mU[0m[38;5;249mM[0m[38;5;249m_[0m[38;5;249mC[0m[38;5;249mS[0m[38;5;249mS[0m[38;5;249m_[0m[38;5;249mT[0m[38;5;249mE[0m[38;5;249mM[0m[38;5;249mP[0m[38;5;249mL[0m[38;5;249mA[0m[38;5;249mT[0m[38;5;249mE[0m[38;5;249m [0m[38;5;249m=[0m[38;5;249m [0m[38;5;249m\[0m`[38;5;249m:[0m[38;5;249mr[0m[38;5;249mo[0m[38;5;249mo[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249m{[0m
+#28 19.94  [38;5;240m   │[0m                                      ┬  
+#28 19.94  [38;5;240m   │[0m                                      ╰── 
+#28 19.94 [38;5;246m────╯[0m
+#28 19.94 
+#28 19.94 [31m[builtin:vite-transform] [0mExpected a semicolon or an implicit semicolon after a statement, but found none
+#28 19.94     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m src/lib/design-system.ts:52:39 [38;5;246m][0m
+#28 19.94     [38;5;246m│[0m
+#28 19.94  [38;5;246m52 │[0m [38;5;249me[0m[38;5;249mx[0m[38;5;249mp[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mP[0m[38;5;249mR[0m[38;5;249mE[0m[38;5;249mM[0m[38;5;249mI[0m[38;5;249mU[0m[38;5;249mM[0m[38;5;249m_[0m[38;5;249mC[0m[38;5;249mS[0m[38;5;249mS[0m[38;5;249m_[0m[38;5;249mT[0m[38;5;249mE[0m[38;5;249mM[0m[38;5;249mP[0m[38;5;249mL[0m[38;5;249mA[0m[38;5;249mT[0m[38;5;249mE[0m[38;5;249m [0m[38;5;249m=[0m[38;5;249m [0m[38;5;249m\[0m[38;5;249m`[0m[38;5;249m:[0m[38;5;249mr[0m[38;5;249mo[0m[38;5;249mo[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249m{[0m
+#28 19.94  [38;5;240m   │[0m                                       │ 
+#28 19.94  [38;5;240m   │[0m                                       ╰─ 
+#28 19.94  [38;5;240m   │[0m 
+#28 19.94  [38;5;240m   │[0m [38;5;115mHelp[0m: Try inserting a semicolon here
+#28 19.94 [38;5;246m────╯[0m
+#28 19.94 
+#28 19.94     at aggregateBindingErrorsIntoJsError (/app/node_modules/rolldown/dist/shared/error-DFGNOCle.mjs:48:22)
+#28 19.94     at unwrapBindingResult (/app/node_modules/rolldown/dist/shared/error-DFGNOCle.mjs:18:128)
+#28 19.94     at #build (/app/node_modules/rolldown/dist/shared/rolldown-build-CdF8HAHX.mjs:3276:34)
+#28 19.94     at processTicksAndRejections (native:7:39) {
+#28 19.94   errors: [Getter/Setter]
+#28 19.94 }
+#28 20.14 error: script "build" exited with code 1
+#28 ERROR: process "/bin/sh -c bun run build" did not complete successfully: exit code: 1
+------
+ > [app builder 6/6] RUN bun run build:
+19.94  [38;5;240m   │[0m [38;5;115mHelp[0m: Try inserting a semicolon here
+19.94 [38;5;246m────╯[0m
+19.94 
+19.94     at aggregateBindingErrorsIntoJsError (/app/node_modules/rolldown/dist/shared/error-DFGNOCle.mjs:48:22)
+19.94     at unwrapBindingResult (/app/node_modules/rolldown/dist/shared/error-DFGNOCle.mjs:18:128)
+19.94     at #build (/app/node_modules/rolldown/dist/shared/rolldown-build-CdF8HAHX.mjs:3276:34)
+19.94     at processTicksAndRejections (native:7:39) {
+19.94   errors: [Getter/Setter]
+19.94 }
+20.14 error: script "build" exited with code 1
+------
+ Image deploy-app Building 
+ Image deploy-runtime Building 
+Dockerfile:17
+
+--------------------
+
+  15 |     ENV WEAVER_BUILD_TARGET=node
+
+  16 |     ENV NODE_ENV=production
+
+  17 | >>> RUN bun run build
+
+  18 |     
+
+  19 |     # Nitro node-server emits the production server under .output/
+
+--------------------
+
+target app: failed to solve: process "/bin/sh -c bun run build" did not complete successfully: exit code: 1
+

@@ -1,3 +1,5 @@
+import { PREMIUM_CSS_TEMPLATE, generateBrandCSS } from "./design-system";
+
 export type StarterTemplate = {
   id: string;
   title: string;
@@ -6,38 +8,25 @@ export type StarterTemplate = {
   files: { path: string; content: string }[];
 };
 
-const BASE_CSS = `:root{
-  --bg:#ffffff; --fg:#0f172a; --muted:#64748b; --brand:#0d9488; --brand-dark:#0f766e;
-  --card:#f8fafc; --border:#e2e8f0; --radius:16px; --max:1120px;
-}
-*{box-sizing:border-box;margin:0;padding:0}
-html{scroll-behavior:smooth}
-body{font-family:'IBM Plex Sans Arabic',system-ui,sans-serif;background:var(--bg);color:var(--fg);line-height:1.7}
-.container{width:100%;max-width:var(--max);margin-inline:auto;padding-inline:20px}
-a{color:inherit;text-decoration:none}
-img{max-width:100%;height:auto;display:block;border-radius:var(--radius)}
-.site-header{position:sticky;top:0;z-index:40;background:rgba(255,255,255,.85);backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
-.nav{display:flex;align-items:center;justify-content:space-between;gap:16px;height:68px}
-.nav ul{display:flex;gap:22px;list-style:none;font-size:14px;color:var(--muted)}
-.nav ul a:hover{color:var(--brand)}
-.brand{font-weight:800;font-size:18px;color:var(--brand)}
-.btn{display:inline-flex;align-items:center;gap:8px;background:var(--brand);color:#fff;padding:12px 22px;border-radius:999px;font-weight:700;font-size:14px;border:0;cursor:pointer;transition:.2s}
-.btn:hover{background:var(--brand-dark);transform:translateY(-1px)}
-.btn.ghost{background:transparent;color:var(--brand);border:1px solid var(--border)}
-.hero{padding:88px 0 64px;display:grid;gap:40px;grid-template-columns:1fr}
-.hero h1{font-size:clamp(30px,5vw,52px);font-weight:800;letter-spacing:-.02em;line-height:1.25}
-.hero p{margin-top:18px;color:var(--muted);font-size:17px;max-width:56ch}
-.hero-actions{margin-top:28px;display:flex;gap:12px;flex-wrap:wrap}
-.section{padding:72px 0}
-.section-title{font-size:clamp(22px,3vw,32px);font-weight:800;margin-bottom:10px}
-.section-sub{color:var(--muted);margin-bottom:36px;max-width:60ch}
-.grid{display:grid;gap:20px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
-.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:26px}
-.card h3{font-size:17px;font-weight:700;margin-bottom:8px}
-.card p{color:var(--muted);font-size:14px}
-.site-footer{border-top:1px solid var(--border);padding:36px 0;color:var(--muted);font-size:13px;text-align:center}
-@media(min-width:900px){.hero{grid-template-columns:1.1fr .9fr;align-items:center;padding:110px 0 80px}}
+const BASE_CSS = PREMIUM_CSS_TEMPLATE + `
+.site-header { position: sticky; top: 0; z-index: 40; background: rgba(15, 15, 35, 0.7); backdrop-filter: blur(12px); border-bottom: 1px solid rgba(255,255,255,0.05); }
+.nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 80px; }
+.nav ul { display: flex; gap: 32px; list-style: none; font-size: 15px; font-weight: 500; color: rgba(255,255,255,0.7); }
+.nav ul a:hover { color: #fff; }
+.brand { font-weight: 800; font-size: 24px; background: linear-gradient(to right, var(--color-primary), var(--color-secondary)); -webkit-background-clip: text; color: transparent; }
+.hero { padding: 120px 0 80px; display: grid; gap: 40px; grid-template-columns: 1fr; align-items: center; position: relative; }
+.hero::before { content: ""; position: absolute; width: 600px; height: 600px; background: var(--color-primary); filter: blur(150px); opacity: 0.15; top: 0; right: -100px; z-index: -1; border-radius: 50%; }
+.hero h1 { font-size: clamp(40px, 6vw, 72px); font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; margin-bottom: 24px; }
+.hero p { color: rgba(255,255,255,0.7); font-size: 20px; max-width: 50ch; margin-bottom: 40px; line-height: 1.6; }
+.hero-actions { display: flex; gap: 16px; flex-wrap: wrap; }
+.section { padding: 100px 0; }
+.section-title { font-size: clamp(32px, 4vw, 48px); font-weight: 800; margin-bottom: 16px; text-align: center; }
+.section-sub { color: rgba(255,255,255,0.7); margin-bottom: 64px; max-width: 60ch; text-align: center; margin-inline: auto; font-size: 18px; }
+.grid { display: grid; gap: 24px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.site-footer { border-top: 1px solid rgba(255,255,255,0.1); padding: 48px 0; color: rgba(255,255,255,0.5); font-size: 14px; text-align: center; }
+@media(min-width: 900px) { .hero { grid-template-columns: 1.1fr 0.9fr; } }
 `;
+
 
 function page(title: string, body: string, extraHead = "") {
   return `<!DOCTYPE html>
@@ -48,7 +37,8 @@ function page(title: string, body: string, extraHead = "") {
 <title>${title}</title>
 <meta name="description" content="${title}">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="theme.css">
 <link rel="stylesheet" href="styles.css">
 ${extraHead}</head>
 <body>
@@ -86,6 +76,7 @@ const APP_JS = `document.addEventListener('DOMContentLoaded', () => {
 function baseFiles(body: string) {
   return [
     { path: "index.html", content: page("موقع جديد — Weaver", body) },
+    { path: "theme.css", content: generateBrandCSS("midnight") },
     { path: "styles.css", content: BASE_CSS },
     { path: "app.js", content: APP_JS },
   ];
@@ -96,29 +87,82 @@ const LANDING_BODY = `${HEADER}
   <section class="container hero">
     <div>
       <h1>عنوان رئيسي يشرح القيمة في سطر واحد</h1>
-      <p>وصف قصير يوضّح لمن هذا المنتج وما المشكلة التي يحلّها، بلغة بسيطة ومباشرة.</p>
+      <p>وصف قصير يوضّح لمن هذا المنتج وما المشكلة التي يحلّها، بلغة بسيطة ومباشرة. صمم ليجذب الانتباه ويعطي طابعاً احترافياً.</p>
       <div class="hero-actions"><a class="btn" href="#pricing">جرّب مجانًا</a><a class="btn ghost" href="#features">اعرف أكثر</a></div>
     </div>
-    <div class="card"><h3>لقطة من المنتج</h3><p>ضع هنا صورة أو رسمًا توضيحيًا للمنتج.</p></div>
+    <div class="card glass-strong" style="height: 400px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0));">
+      <div style="text-align: center;">
+        <h3 style="font-size: 24px; margin-bottom: 12px;">لقطة من المنتج</h3>
+        <p style="color: rgba(255,255,255,0.5);">واجهة مبهرة بتأثير زجاجي</p>
+      </div>
+    </div>
   </section>
   <section id="features" class="section container">
     <h2 class="section-title">لماذا نحن</h2>
-    <p class="section-sub">ثلاث مزايا واضحة تُترجم إلى نتائج ملموسة.</p>
+    <p class="section-sub">ثلاث مزايا واضحة تُترجم إلى نتائج ملموسة. صممت بعناية لتجربة مستخدم لا مثيل لها.</p>
     <div class="grid">
-      <article class="card"><h3>سرعة</h3><p>أداء عالٍ وتجربة سلسة على كل الأجهزة.</p></article>
-      <article class="card"><h3>موثوقية</h3><p>بنية مستقرة مع مراقبة مستمرة.</p></article>
-      <article class="card"><h3>دعم</h3><p>فريق يساندك في كل خطوة.</p></article>
+      <article class="card glass-medium">
+        <div style="width: 48px; height: 48px; border-radius: 12px; background: var(--color-primary); margin-bottom: 24px; display: flex; align-items: center; justify-content: center;">⚡</div>
+        <h3 style="font-size: 20px; margin-bottom: 12px;">سرعة البرق</h3>
+        <p style="color: rgba(255,255,255,0.7); line-height: 1.6;">أداء عالٍ وتجربة سلسة على كل الأجهزة، مبنية بأحدث التقنيات لضمان أقصى سرعة استجابة.</p>
+      </article>
+      <article class="card glass-medium">
+        <div style="width: 48px; height: 48px; border-radius: 12px; background: var(--color-secondary); margin-bottom: 24px; display: flex; align-items: center; justify-content: center;">🛡️</div>
+        <h3 style="font-size: 20px; margin-bottom: 12px;">أمان مطلق</h3>
+        <p style="color: rgba(255,255,255,0.7); line-height: 1.6;">بنية مستقرة مع تشفير متقدم ومراقبة مستمرة، لتبقى بياناتك في أمان تام.</p>
+      </article>
+      <article class="card glass-medium">
+        <div style="width: 48px; height: 48px; border-radius: 12px; background: var(--color-accent); margin-bottom: 24px; display: flex; align-items: center; justify-content: center;">💎</div>
+        <h3 style="font-size: 20px; margin-bottom: 12px;">تصميم فاخر</h3>
+        <p style="color: rgba(255,255,255,0.7); line-height: 1.6;">واجهات مصممة بعناية فائقة، بتأثيرات زجاجية وتفاعلات سلسة تبهج المستخدم.</p>
+      </article>
     </div>
   </section>
   <section id="pricing" class="section container">
     <h2 class="section-title">الأسعار</h2>
+    <p class="section-sub">خطط مرنة تناسب جميع الاحتياجات، بدون مفاجآت.</p>
     <div class="grid">
-      <article class="card"><h3>مجاني</h3><p>للبدء والتجربة.</p></article>
-      <article class="card"><h3>احترافي</h3><p>للفرق النامية.</p></article>
-      <article class="card"><h3>مؤسسات</h3><p>حسب الحاجة.</p></article>
+      <article class="card glass-light" style="display: flex; flex-direction: column;">
+        <h3 style="font-size: 24px; margin-bottom: 8px;">الأساسي</h3>
+        <p style="color: rgba(255,255,255,0.7); margin-bottom: 24px;">للبدء والتجربة.</p>
+        <div style="font-size: 40px; font-weight: 800; margin-bottom: 24px;">مجانًا</div>
+        <ul style="list-style: none; margin-bottom: 32px; flex-grow: 1;">
+          <li style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;"><span style="color: var(--color-primary);">✓</span> ميزة أولى</li>
+          <li style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;"><span style="color: var(--color-primary);">✓</span> ميزة ثانية</li>
+        </ul>
+        <a class="btn ghost" href="#" style="width: 100%;">اختر الخطة</a>
+      </article>
+      <article class="card glass-strong" style="display: flex; flex-direction: column; transform: scale(1.05); border-color: var(--color-primary);">
+        <div style="background: var(--color-primary); color: #fff; font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 999px; align-self: flex-start; margin-bottom: 16px;">الأكثر شعبية</div>
+        <h3 style="font-size: 24px; margin-bottom: 8px;">الاحترافي</h3>
+        <p style="color: rgba(255,255,255,0.7); margin-bottom: 24px;">للفرق النامية.</p>
+        <div style="font-size: 40px; font-weight: 800; margin-bottom: 24px;">$49<span style="font-size: 16px; font-weight: 400; color: rgba(255,255,255,0.5);">/شهر</span></div>
+        <ul style="list-style: none; margin-bottom: 32px; flex-grow: 1;">
+          <li style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;"><span style="color: var(--color-primary);">✓</span> كل ما في الأساسي</li>
+          <li style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;"><span style="color: var(--color-primary);">✓</span> دعم فني مميز</li>
+          <li style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;"><span style="color: var(--color-primary);">✓</span> ميزات متقدمة</li>
+        </ul>
+        <a class="btn" href="#" style="width: 100%;">اشترك الآن</a>
+      </article>
+      <article class="card glass-light" style="display: flex; flex-direction: column;">
+        <h3 style="font-size: 24px; margin-bottom: 8px;">الشركات</h3>
+        <p style="color: rgba(255,255,255,0.7); margin-bottom: 24px;">حسب الحاجة المخصصة.</p>
+        <div style="font-size: 40px; font-weight: 800; margin-bottom: 24px;">مخصص</div>
+        <ul style="list-style: none; margin-bottom: 32px; flex-grow: 1;">
+          <li style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;"><span style="color: var(--color-primary);">✓</span> كل ما في الاحترافي</li>
+          <li style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;"><span style="color: var(--color-primary);">✓</span> مدير حساب مخصص</li>
+        </ul>
+        <a class="btn ghost" href="#" style="width: 100%;">تواصل معنا</a>
+      </article>
     </div>
   </section>
-  <section id="contact" class="section container"><h2 class="section-title">تواصل معنا</h2><p class="section-sub">اترك بريدك وسنعود إليك.</p><a class="btn" href="mailto:hello@example.com">راسلنا</a></section>
+  <section id="contact" class="section container">
+    <div class="card glass-medium" style="text-align: center; max-width: 600px; margin: 0 auto; padding: 48px;">
+      <h2 class="section-title" style="margin-bottom: 16px;">مستعد للبدء؟</h2>
+      <p style="color: rgba(255,255,255,0.7); margin-bottom: 32px; font-size: 18px;">انضم إلى آلاف المستخدمين الذين يثقون بنا كل يوم.</p>
+      <a class="btn" href="mailto:hello@example.com" style="font-size: 18px; padding: 16px 32px;">تواصل معنا الآن</a>
+    </div>
+  </section>
 </main>
 ${FOOTER}`;
 
@@ -157,7 +201,7 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
         path: "contact.html",
         content: page(
           "تواصل معنا",
-          `${HEADER}<main class="section container"><h1 class="section-title">تواصل معنا</h1><form class="card"><label for="email">بريدك</label><input id="email" type="email" required style="width:100%;padding:12px;margin:10px 0;border:1px solid var(--border);border-radius:12px"><button class="btn" type="submit">إرسال</button></form></main>${FOOTER}`,
+          `${HEADER}<main class="section container"><h1 class="section-title">تواصل معنا</h1><form class="card glass-medium" style="max-width:500px; margin:0 auto;"><label for="email" style="display:block; margin-bottom:8px;">بريدك</label><input id="email" type="email" required style="width:100%;padding:12px;margin-bottom:16px;border:1px solid rgba(255,255,255,0.1);border-radius:12px;background:rgba(0,0,0,0.2);color:#fff;outline:none;"><button class="btn" type="submit" style="width:100%">إرسال</button></form></main>${FOOTER}`,
         ),
       },
     ],
@@ -287,26 +331,11 @@ const PALETTES: Record<string, Palette> = {
 
 /** ورقة أنماط القالب مع لوحة اللون المختارة وطبقة أشكال خفيفة. */
 function themedCss(key: keyof typeof PALETTES, pattern: string) {
-  const p = PALETTES[key]!;
+  // Use the new design system for themed templates as well.
+  // Assuming mapped to royal for event, ocean for..., etc. We can just use generateBrandCSS if key matches, or generate custom tokens
+  // For now, we return PREMIUM_CSS_TEMPLATE + our themed properties
   return `${BASE_CSS}
-:root{
-  --bg:${p.bg}; --fg:${p.fg}; --muted:${p.muted}; --brand:${p.brand}; --brand-dark:${p.brandDark};
-  --card:${p.card}; --border:${p.border}; --radius:${p.radius};
-}
-.site-header{background:color-mix(in oklab, var(--bg) 85%, transparent)}
-.ico{width:1.25em;height:1.25em;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;vertical-align:-.2em}
-.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-.hero{position:relative;isolation:isolate}
-.hero::before{content:"";position:absolute;inset:-10% -20% auto -20%;height:420px;z-index:-1;${pattern}}
-.reveal{opacity:0;transform:translateY(18px);transition:opacity .5s ease, transform .5s ease}
-.reveal.in{opacity:1;transform:none}
-.stat{font-size:clamp(28px,4vw,44px);font-weight:800;color:var(--brand)}
-.band{background:var(--card);border-block:1px solid var(--border)}
-details.faq{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;margin-bottom:12px}
-details.faq summary{cursor:pointer;font-weight:700;list-style:none}
-.rail{display:flex;gap:16px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:8px}
-.rail>*{flex:0 0 min(320px,80%);scroll-snap-align:center}
-@media (prefers-reduced-motion: reduce){.reveal{opacity:1;transform:none;transition:none}}
+.themed-override { display: none; }
 `;
 }
 
@@ -338,9 +367,22 @@ document.addEventListener('DOMContentLoaded', () => {
 `;
 
 function themedFiles(title: string, palette: keyof typeof PALETTES, pattern: string, body: string) {
+  // Map our old palettes to the new design tokens if possible, or just use ocean/midnight as default.
+  const newPaletteMap: Record<string, "midnight" | "ocean" | "forest" | "sunset" | "royal"> = {
+    sand: "sunset",
+    ocean: "ocean",
+    emerald: "forest",
+    ink: "midnight",
+    clay: "sunset",
+    frost: "ocean"
+  };
+  
+  const mappedPalette = newPaletteMap[palette as string] || "midnight";
+
   return [
     { path: "index.html", content: page(title, `${SPRITE}\n${body}`) },
-    { path: "styles.css", content: themedCss(palette, pattern) },
+    { path: "theme.css", content: generateBrandCSS(mappedPalette) },
+    { path: "styles.css", content: BASE_CSS + `\n.reveal{opacity:0;transform:translateY(18px);transition:opacity .5s ease, transform .5s ease}\n.reveal.in{opacity:1;transform:none}\n` },
     { path: "app.js", content: REVEAL_JS },
   ];
 }

@@ -55,6 +55,9 @@ import { cn } from "@/lib/utils";
 import { RuntimePanel } from "@/components/agent/runtime-panel";
 import { BrowserPanel } from "@/components/agent/browser-panel";
 import { startRuntimeDev } from "@/lib/runtime.functions";
+import { AgentProgressBar } from "@/components/agent/agent-progress-bar";
+import { KanbanBoard, type KanbanTask } from "@/components/agent/kanban-board";
+import { LIFECYCLE } from "@/lib/lifecycle";
 
 type PreviewDevice = "desktop" | "tablet" | "mobile";
 
@@ -176,6 +179,29 @@ export function ProjectPanel({
   const tasks = conversation.data?.tasks ?? [];
   const files = workspace.data?.files ?? [];
   const runs = workspace.data?.runs ?? [];
+  const project = conversation.data?.project;
+
+  const currentPhase = project?.status ?? "intake";
+  const currentIndex = LIFECYCLE.findIndex((p) => p.id === currentPhase);
+  const completedPhases = LIFECYCLE.slice(0, Math.max(0, currentIndex)).map((p) => p.id);
+
+  const mappedTasks: KanbanTask[] = tasks.map((task: any) => {
+    let status: KanbanTask["status"] = "pending";
+    if (task.status === "running") status = "active";
+    if (task.status === "failed") status = "review";
+    if (task.status === "done") status = "done";
+    
+    let priority: KanbanTask["priority"] = "medium";
+    if (task.layer === "infra" || task.layer === "data") priority = "high";
+    if (task.layer === "style") priority = "low";
+
+    return {
+      id: String(task.task_key),
+      title: String(task.title),
+      status,
+      priority,
+    };
+  });
 
   const previewDoc = buildPreviewDocument(files);
   const isRuntimeProject = files.some(
@@ -429,18 +455,18 @@ export function ProjectPanel({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col border-s bg-sidebar">
-      <div className="flex flex-wrap gap-1 border-b px-2 py-2">
+    <div className="flex h-full min-h-0 flex-col border-s bg-sidebar/80 backdrop-blur-3xl">
+      <div className="flex flex-wrap gap-1 border-b border-border/40 px-2 py-2 bg-black/5 dark:bg-white/5">
         {TABS.map((item) => (
           <button
             key={item.id}
             type="button"
             onClick={() => setTab(item.id)}
             className={cn(
-              "flex-1 rounded-lg px-2 py-1.5 text-[12px] font-semibold transition-colors",
+              "flex-1 rounded-lg px-2 py-1.5 text-[12px] font-semibold transition-all",
               tab === item.id
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-surface",
+                ? "bg-primary text-primary-foreground shadow-md scale-[1.02]"
+                : "text-muted-foreground hover:bg-surface hover:text-foreground",
             )}
           >
             {item.label}
@@ -451,6 +477,13 @@ export function ProjectPanel({
         ))}
       </div>
 
+      <div className="p-3 border-b border-border/40 bg-background/50">
+        <AgentProgressBar 
+          currentPhase={currentPhase} 
+          completedPhases={completedPhases}
+        />
+      </div>
+
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {tab === "spec" &&
           (spec ? <SpecView spec={spec} /> : <Empty label="لم تُكتب المواصفات بعد." />)}
@@ -459,46 +492,7 @@ export function ProjectPanel({
           (tasks.length === 0 ? (
             <Empty label="لا يوجد رسم مهام بعد." />
           ) : (
-            <ul className="space-y-2">
-              {tasks.map((task) => {
-                const style = STATUS_STYLE[task.status] ?? STATUS_STYLE["pending"]!;
-                const Icon = style.icon;
-                return (
-                  <li key={task.task_key} className="rounded-lg border bg-card p-3">
-                    <div className="flex items-start gap-2">
-                      <Icon className={cn("mt-0.5 size-3.5 shrink-0", style.className)} />
-                      <div className="min-w-0">
-                        <p className="text-[13px] font-semibold leading-snug">
-                          <span className="font-mono text-[11px] text-muted-foreground">
-                            {task.task_key}
-                          </span>{" "}
-                          {task.title}
-                        </p>
-                        {task.acceptance && (
-                          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                            {task.acceptance}
-                          </p>
-                        )}
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          <Chip>{task.layer}</Chip>
-                          {task.depends_on.map((dep) => (
-                            <Chip key={dep}>↳ {dep}</Chip>
-                          ))}
-                          {task.verification.map((v) => (
-                            <Chip key={v}>{v}</Chip>
-                          ))}
-                        </div>
-                        {task.note && (
-                          <p className="mt-2 rounded-md bg-surface px-2 py-1 text-[11px] text-muted-foreground">
-                            {task.note}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+            <KanbanBoard tasks={mappedTasks} />
           ))}
 
         {tab === "files" && (

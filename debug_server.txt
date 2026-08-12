@@ -1,0 +1,106 @@
+=== docker ps --format "table {{.Names}}	{{.Status}}	{{.Ports}}" | grep weaver-app ===
+weaver-app       Up 2 hours (healthy)   127.0.0.1:3010->3000/tcp
+
+
+=== docker logs --tail 100 weaver-app 2>&1 ===
+  severity: 'NOTICE',
+  code: '42P07',
+  message: 'relation "knowledge_entries_user_recent" already exists, skipping',
+  file: 'index.c',
+  line: '889',
+  routine: 'index_create'
+}
+{
+  severity_local: 'NOTICE',
+  severity: 'NOTICE',
+  code: '42P07',
+  message: 'relation "knowledge_entries_tags" already exists, skipping',
+  file: 'index.c',
+  line: '889',
+  routine: 'index_create'
+}
+[weaver:message-integrity] {"duplicatePositions":0,"duplicateIds":0,"removed":0}
+[weaver:tool:web_search] attempt 1 فشل البحث في الويب — braveSearch: بلا نتائج | ddgSearch: بلا نتائج
+{
+  severity_local: 'NOTICE',
+  severity: 'NOTICE',
+  code: '42701',
+  message: 'column "custom_domain" of relation "projects" already exists, skipping',
+  file: 'tablecmds.c',
+  line: '7471',
+  routine: 'check_for_column_name_collision'
+}
+{
+  severity_local: 'NOTICE',
+  severity: 'NOTICE',
+  code: '42701',
+  message: 'column "domain_status" of relation "projects" already exists, skipping',
+  file: 'tablecmds.c',
+  line: '7471',
+  routine: 'check_for_column_name_collision'
+}
+{
+  severity_local: 'NOTICE',
+  severity: 'NOTICE',
+  code: '42701',
+  message: 'column "domain_error" of relation "projects" already exists, skipping',
+  file: 'tablecmds.c',
+  line: '7471',
+  routine: 'check_for_column_name_collision'
+}
+{
+  severity_local: 'NOTICE',
+  severity: 'NOTICE',
+  code: '42701',
+  message: 'column "domain_updated_at" of relation "projects" already exists, skipping',
+  file: 'tablecmds.c',
+  line: '7471',
+  routine: 'check_for_column_name_collision'
+}
+{
+  severity_local: 'NOTICE',
+  severity: 'NOTICE',
+  code: '42P07',
+  message: 'relation "projects_custom_domain_key" already exists, skipping',
+  file: 'index.c',
+  line: '889',
+  routine: 'index_create'
+}
+[weaver:message-integrity] {"duplicatePositions":0,"duplicateIds":0,"removed":0}
+[weaver:message-integrity] {"duplicatePositions":0,"duplicateIds":0,"removed":0}
+[weaver:stream] Invalid input for tool write_file: AI_TypeValidationError: Type validation failed: Value: {"path":"styles.css","content":"/* أنماط مخصصة لمطعم اللؤلؤة */\n\n/* تحسينات للتصميم الفاخر */\n.u-hero {\n  position: relative;\n  overflow: hidden;\n}\n\n.u-hero::before {\n  content: '';\n  position: absolute;\n  top: 0;\n  left: 0;\n  right: 0;\n  bottom: 0;\n  background: linear-gradient(135deg, \n    color-mix(in oklab, var(--color-bg) 70%, transparent) 0%, \n    color-mix(in oklab, var(--color-primary) 15%, transparent) 100%);\n  z-index: -1;\n}\n\n.u-card {\n  transition: all 0.3s ease;\n  border: 1px solid color-mix(in oklab, var(--color-border) 50%, transparent);\n}\n\n.u-card:hover {\n  transform: translateY(-4px);\n  box-shadow: var(--shadow-lg);\n  border-color: color-mix(in oklab, var(--color-primary) 30%, transparent);\n}\n\n.u-caption {\n  position: absolute;\n  bottom: 0;\n  left: 0;\n  right: 0;\n  background: color-mix(in oklab, var(--color-bg) 90%, transparent);\n  backdrop-filter: blur(10px);\n  padding: var(--space-3);\n  margin: 0;\n  font-weight: 500;\n  color: var(--color-text);\n  text-align: center;\n}\n\n/* تحسينات للوضع الداكن */\n@media (prefers-color-scheme: dark) {\n  .u-card {\n    background: color-mix(in oklab, var(--color-surface) 95%, transparent);\n  }\n  \n  .u-caption {\n    background: color-mix(in oklab, var(--color-bg) 85%, transparent);\n  }\n}\n\n/* تحسينات للوصولية */\n.u-btn:focus-visible,\n.u-burger:focus-visible,\ndetails summary:focus-visible {\n  outline: 2px solid var(--color-primary);\n  outline-offset: 2px;\n}\n\n/* احترام تفضيلات تقليل الحركة */\n@media (prefers-reduced-motion: reduce) {\n  .u-reveal,\n  .u-card,\n  .u-btn {\n    transition: none !important;\n    animation: none !important;\n  }\n}\n\n/* تحسينات للتخطيط العربي */\n.u-section-head h2 {\n  font-family: var(--font-head);\n  font-weight: 700;\n  line-height: 1.2;\n}\n\n.u-hero__lede {\n  font-size: var(--text-lg);\n  line-height: 1.7;\n  color: var(--color-muted);\n}\n\n/* تحسينات للجوال */\n@media (max-width: 768px) {\n  .u-hero__grid {\n    grid-template-columns: 1fr !important;\n    gap: var(--space-8) !important;\n  }\n  \n  .u-hero__media {\n    order: -1;\n  }\n  \n  .u-grid-3 {\n    grid-template-columns: 1fr !important;\n  }\n}\n\n/* تأثيرات خاصة للفخامة */\n.u-eyebrow {\n  display: inline-block;\n  padding: var(--space-2) var(--space-4);\n  background: color-mix(in oklab, var(--color-primary) 15%, transparent);\n  border: 1px solid color-mix(in oklab, var(--color-primary) 30%, transparent);\n  border-radius: var(--radius-full);\n  font-size: var(--text-sm);\n  font-weight: 500;\n  color: var(--color-primary);\n  margin-bottom: var(--space-6);\n}\n\n.u-quote blockquote {\n  position: relative;\n  padding-inline-start: var(--space-8);\n}\n\n.u-quote blockquote::before {\n  content: \"\\201C\";\n  position: absolute;\n  inset-inline-start: 0;\n  top: -0.5em;\n  font-size: 3em;\n  color: color-mix(in oklab, var(--color-primary) 40%, transparent);\n  font-family: var(--font-head);\n  line-height: 1;\n}\n\n/* تحديث السنة تلقائياً */\n#year::after {\n  content: \"2024\";\n}\n\n@media (max-width: 480px) {\n  .u-footer__grid {\n    grid-template-columns: 1fr !important;\n    gap: var(--space-8) !important;\n  }\n  \n  .u-row {\n    flex-direction: column;\n    gap: var(--space-3) !important;\n  }\n}"}.
+Error message: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "undefined",
+    "path": [
+      "summary"
+    ],
+    "message": "Required"
+  }
+]
+[weaver:stream] AI_InvalidToolInputError: Invalid input for tool write_file: AI_TypeValidationError: Type validation failed: Value: {"path":"styles.css","content":"/* أنماط مخصصة لمطعم اللؤلؤة */\n\n/* تحسينات للتصميم الفاخر */\n.u-hero {\n  position: relative;\n  overflow: hidden;\n}\n\n.u-hero::before {\n  content: '';\n  position: absolute;\n  top: 0;\n  left: 0;\n  right: 0;\n  bottom: 0;\n  background: linear-gradient(135deg, \n    color-mix(in oklab, var(--color-bg) 70%, transparent) 0%, \n    color-mix(in oklab, var(--color-primary) 15%, transparent) 100%);\n  z-index: -1;\n}\n\n.u-card {\n  transition: all 0.3s ease;\n  border: 1px solid color-mix(in oklab, var(--color-border) 50%, transparent);\n}\n\n.u-card:hover {\n  transform: translateY(-4px);\n  box-shadow: var(--shadow-lg);\n  border-color: color-mix(in oklab, var(--color-primary) 30%, transparent);\n}\n\n.u-caption {\n  position: absolute;\n  bottom: 0;\n  left: 0;\n  right: 0;\n  background: color-mix(in oklab, var(--color-bg) 90%, transparent);\n  backdrop-filter: blur(10px);\n  padding: var(--space-3);\n  margin: 0;\n  font-weight: 500;\n  color: var(--color-text);\n  text-align: center;\n}\n\n/* تحسينات للوضع الداكن */\n@media (prefers-color-scheme: dark) {\n  .u-card {\n    background: color-mix(in oklab, var(--color-surface) 95%, transparent);\n  }\n  \n  .u-caption {\n    background: color-mix(in oklab, var(--color-bg) 85%, transparent);\n  }\n}\n\n/* تحسينات للوصولية */\n.u-btn:focus-visible,\n.u-burger:focus-visible,\ndetails summary:focus-visible {\n  outline: 2px solid var(--color-primary);\n  outline-offset: 2px;\n}\n\n/* احترام تفضيلات تقليل الحركة */\n@media (prefers-reduced-motion: reduce) {\n  .u-reveal,\n  .u-card,\n  .u-btn {\n    transition: none !important;\n    animation: none !important;\n  }\n}\n\n/* تحسينات للتخطيط العربي */\n.u-section-head h2 {\n  font-family: var(--font-head);\n  font-weight: 700;\n  line-height: 1.2;\n}\n\n.u-hero__lede {\n  font-size: var(--text-lg);\n  line-height: 1.7;\n  color: var(--color-muted);\n}\n\n/* تحسينات للجوال */\n@media (max-width: 768px) {\n  .u-hero__grid {\n    grid-template-columns: 1fr !important;\n    gap: var(--space-8) !important;\n  }\n  \n  .u-hero__media {\n    order: -1;\n  }\n  \n  .u-grid-3 {\n    grid-template-columns: 1fr !important;\n  }\n}\n\n/* تأثيرات خاصة للفخامة */\n.u-eyebrow {\n  display: inline-block;\n  padding: var(--space-2) var(--space-4);\n  background: color-mix(in oklab, var(--color-primary) 15%, transparent);\n  border: 1px solid color-mix(in oklab, var(--color-primary) 30%, transparent);\n  border-radius: var(--radius-full);\n  font-size: var(--text-sm);\n  font-weight: 500;\n  color: var(--color-primary);\n  margin-bottom: var(--space-6);\n}\n\n.u-quote blockquote {\n  position: relative;\n  padding-inline-start: var(--space-8);\n}\n\n.u-quote blockquote::before {\n  content: \"\\201C\";\n  position: absolute;\n  inset-inline-start: 0;\n  top: -0.5em;\n  font-size: 3em;\n  color: color-mix(in oklab, var(--color-primary) 40%, transparent);\n  font-family: var(--font-head);\n  line-height: 1;\n}\n\n/* تحديث السنة تلقائياً */\n#year::after {\n  content: \"2024\";\n}\n\n@media (max-width: 480px) {\n  .u-footer__grid {\n    grid-template-columns: 1fr !important;\n    gap: var(--space-8) !important;\n  }\n  \n  .u-row {\n    flex-direction: column;\n    gap: var(--space-3) !important;\n  }\n}"}.
+Error message: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "undefined",
+    "path": [
+      "summary"
+    ],
+    "message": "Required"
+  }
+]
+[weaver:tool:publish_site] attempt 1 فشل النشر لأن فحص الجودة لم ينجح: فشل الفحص: 8 خطأ و 12 تحذير في 19 ملف
+[weaver:message-integrity] {"duplicatePositions":0,"duplicateIds":0,"removed":0}
+[weaver:tool:publish_site] attempt 1 فشل النشر لأن فحص الجودة لم ينجح: فشل الفحص: 8 خطأ و 11 تحذير في 19 ملف
+[weaver:stream] This request requires more credits, or fewer max_tokens. You requested up to 16000 tokens, but can only afford 10839. To increase, visit https://openrouter.ai/settings/credits and add more credits
+[weaver:stream] Bad Request
+[weaver:stream] Bad Request
+[weaver:stream] Bad Request
+[weaver:message-integrity] {"duplicatePositions":0,"duplicateIds":0,"removed":0}
+[weaver:message-integrity] {"duplicatePositions":0,"duplicateIds":0,"removed":0}
+[weaver:message-integrity] {"duplicatePositions":0,"duplicateIds":0,"removed":0}
+[weaver:stream] This request requires more credits, or fewer max_tokens. You requested up to 16000 tokens, but can only afford 6845. To increase, visit https://openrouter.ai/settings/credits and add more credits
+

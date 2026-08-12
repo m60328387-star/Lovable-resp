@@ -25,6 +25,9 @@ import { capabilitiesPrompt } from "@/lib/agent/capabilities";
 import { runtimeConfigured } from "@/lib/runtime.server";
 import { applyModelOverrides } from "@/lib/intel.server";
 
+import { analyzeTaskComplexity, routeModel } from "@/lib/agent/model-router";
+import { LoopBreaker } from "@/lib/agent/loop-breaker";
+import { globalToolCache } from "@/lib/agent/tool-cache";
 import { compactMessages } from "@/lib/context-compaction";
 import { resolveMaxOutputTokens, noteTokenBudgetError } from "@/lib/token-budget.server";
 import { MEMORY_RULE, SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
@@ -79,6 +82,8 @@ type LifecycleState = {
   checksPassed: boolean;
   /** آخر design_review على النسخة الحالية انتهى بـ pass — بوابة إلزامية قبل النشر. */
   designPassed: boolean;
+  /** نتيجة فحص E2E تفاعلي عبر أداة run_e2e_tests — بوابة إضافية لجودة المنصة. */
+  e2ePassed: boolean;
   published: boolean;
   acted: boolean;
 };
@@ -96,56 +101,35 @@ export function hasBuildIntent(messages: UIMessage[]) {
   return BUILD_INTENT_PATTERN.test(text);
 }
 
-/** كل ما كتبه المستخدم في هذه المحادثة — لا آخر رسالة فقط. */
-function conversationUserText(messages: UIMessage[]) {
-  return messages
-    .filter((m) => m.role === "user")
-    .flatMap((m) => (m.parts ?? []).map((p) => (p.type === "text" ? p.text : "")))
+/** آخر نصّ كتبه المستخدم — يُستخدم لاختيار الأدوات المرسلة للنموذج. */
+function lastUserText(messages: UIMessage[]) {
+  const lastUser = [...messages].reverse().find((m) => m.role === "user");
+  return (lastUser?.parts ?? [])
+    .map((p) => (p.type === "text" ? p.text : ""))
     .join(" ")
     .toLowerCase();
 }
 
-/** أسماء الأدوات التي استُدعيت فعلاً في هذه المحادثة (من أجزاء الرسائل `tool-<name>`). */
-function usedToolNames(messages: UIMessage[]): Set<string> {
-  const names = new Set<string>();
-  for (const message of messages) {
-    for (const part of (message.parts ?? []) as { type: string }[]) {
-      if (typeof part?.type === "string" && part.type.startsWith("tool-")) {
-        names.add(part.type.slice(5));
-      }
-    }
-  }
-  return names;
-}
-
 /**
  * يحدّد مجموعات الأدوات المرسلة في هذه الجولة.
- * إرسال كل الأدوات دائماً كان يضيف آلاف التوكينات إلى كل خطوة من خطوات الوكيل.
- *
- * لكن الاختيار يجب أن يكون *لاصقاً*: الاعتماد على آخر رسالة مستخدم فقط كان يجعل
- * مجموعة أدوات تختفي في جولة المتابعة التلقائية ("أكمل البناء…")، فيستدعي النموذج
- * أداةً لم تعد مسجّلة ← AI_NoSuchToolError وانقطاع الجولة. لذلك نفحص المحادثة كاملة،
- * ونُبقي أي مجموعة استُخدمت فعلاً، ونُبقي أدوات قاعدة البيانات مفعّلة دائماً في وضع البناء
- * (أربع أدوات فقط، كلفتها في السياق مهملة أمام كلفة انقطاع الجولة).
+ * إرسال كل الأدوات دائماً كان يضيف آلاف التوكينات إلى كل خطوة من خطوات الوكيل،
+ * وهو أحد أكبر أسباب البطء وطول الصمت مقارنة بالمنصات الكبرى.
  */
 export function selectToolGroups(mode: string, messages: UIMessage[]) {
-  const text = conversationUserText(messages);
-  const used = usedToolNames(messages);
+  const text = lastUserText(messages);
   const mentions = (pattern: RegExp) => pattern.test(text);
-  const usedAny = (names: string[]) => names.some((n) => used.has(n));
-
   if (mode === "platform") {
     return { workspace: false, bot: false, db: false, connectors: false, platform: true };
   }
   return {
-    workspace: mode === "build" || usedAny(["write_file", "turbo_build", "run_checks", "publish"]),
-    bot: mode === "bot" || mentions(/telegram|تيليغرام|بوت|bot/) || usedAny(["bot_setup"]),
-    // دائماً متاحة أثناء البناء: اختفاؤها بين الجولات كان سبباً مباشراً لأخطاء الأدوات.
-    db: mode === "build" || usedAny(["db_sql", "db_inspect", "db_select", "db_insert"]),
-    connectors:
-      mentions(
-        /connector|رابط خارجي|api|notion|airtable|slack|github|resend|unsplash|بريد|webhook/,
-      ) || usedAny(["connector_call", "connector_list"]),
+    workspace: mode === "build",
+    bot: mode === "bot" || mentions(/telegram|تيليغرام|بوت|bot/),
+    db:
+      mode === "build" &&
+      mentions(/قاعدة|جدول|sql|database|supabase|بيانات|تسجيل|حساب|auth|مستخدم/),
+    connectors: mentions(
+      /connector|رابط خارجي|api|notion|airtable|slack|github|resend|unsplash|بريد|webhook/,
+    ),
     platform: mentions(/weaver نفس|المنصة نفسها|عدّل المنصة|طوّر المنصة|self_/),
   };
 }
@@ -159,6 +143,7 @@ export function isBuildComplete(state: LifecycleState) {
     state.hasFiles &&
     state.checksPassed &&
     state.designPassed &&
+    state.e2ePassed &&
     state.published
   );
 }
@@ -182,6 +167,8 @@ export function nextBuildAction(state: LifecycleState): string | null {
     return "شغّل run_checks وأصلح كل خطأ عبر fix_errors/write_file حتى ينجح الفحص.";
   if (!state.designPassed)
     return "نفّذ browser_check ثم design_review على النسخة الحالية وأصلح كل ملاحظة حتى passed=true (النشر محجوب قبلها).";
+  if (!state.e2ePassed)
+    return "نفّذ فحص جودة تفاعلي عبر run_e2e_tests يحاكي تفاعل مستخدم حقيقي (نقر أزرار/نماذج) لضمان الاحترافية، وأصلح أي خطأ يظهر.";
   if (!state.published) return "انشر المشروع عبر publish_site واذكر الرابط /s/<slug>.";
   return null;
 }
@@ -196,7 +183,6 @@ function applyToolResult(state: LifecycleState, name: string, value: unknown) {
   if (!isSuccessfulResult(value)) return;
   if (
     [
-      "turbo_build",
       "write_file",
       "write_files",
       "append_file",
@@ -220,7 +206,6 @@ function applyToolResult(state: LifecycleState, name: string, value: unknown) {
   }
   if (
     [
-      "turbo_build",
       "write_file",
       "write_files",
       "append_file",
@@ -229,11 +214,11 @@ function applyToolResult(state: LifecycleState, name: string, value: unknown) {
       "promote_build",
     ].includes(name)
   ) {
-    const turbo = value as { mode?: string };
-    if (name !== "turbo_build" || turbo.mode === "built") state.hasFiles = true;
+    state.hasFiles = true;
     state.checksPassed = false;
-    // أي تعديل على الملفات يُبطل المراجعة البصرية السابقة — يجب إعادتها قبل النشر.
+    // أي تعديل على الملفات يُبطل المراجعة البصرية والـ E2E السابقة — يجب إعادتها قبل النشر.
     state.designPassed = false;
+    state.e2ePassed = false;
     state.published = false;
   }
   if (name === "run_checks" || name === "fix_errors") {
@@ -243,6 +228,10 @@ function applyToolResult(state: LifecycleState, name: string, value: unknown) {
   if (name === "design_review") {
     const result = value as { passed?: boolean };
     state.designPassed = result.passed === true;
+  }
+  if (name === "run_e2e_tests") {
+    const result = value as { ok?: boolean };
+    state.e2ePassed = result.ok === true;
   }
   if (name === "publish_site") state.published = true;
 }
@@ -291,6 +280,7 @@ const RETRYABLE_TOOLS = new Set([
   "deep_think",
   "analyze_image",
   "semantic_index",
+  "run_e2e_tests",
 ]);
 
 const RETRY_DELAYS_MS = [400, 1200];
@@ -326,6 +316,7 @@ export function hardenTools<T extends Record<string, unknown>>(
   onResult?: (name: string, value: unknown) => void,
   onEvent?: (event: ToolEvent) => void,
   audit?: { userId?: string | null; projectId?: string | null },
+  loopBreaker?: LoopBreaker,
 ): T {
   const logAudit = (
     name: string,
@@ -361,13 +352,52 @@ export function hardenTools<T extends Record<string, unknown>>(
     out[name] = {
       ...(value as object),
       execute: async (...args: never[]) => {
+        // Cache Check
+        const cached = globalToolCache.get(name, args);
+        if (cached !== null) return cached;
+
         let lastError = "";
         for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+          // Loop Breaker Check
+          if (loopBreaker) {
+             const check = loopBreaker.checkLoop();
+             if (check.breakLoop) {
+                return { ok: false, error: "Loop detected: " + check.reason, force_stop: true };
+             }
+          }
+
           const startedAt = Date.now();
           try {
             const { runInSandbox } = await import("@/lib/sandbox.server");
-            const result = await runInSandbox(name, async () => original(...args));
+            let result = await runInSandbox(name, async () => original(...args));
+            
+            // Output Limiter
+            if (result && typeof result === "object") {
+                const r = result as any;
+                if (name === "read_file" && typeof r.content === "string" && r.content.length > 3000) {
+                   r.content = r.content.substring(0, 3000) + "\n\n...[TRUNCATED: File too long. Use read_slice to view specific lines]...";
+                } else if (name === "shell" && typeof r.output === "string" && r.output.length > 2000) {
+                   r.output = "...[TRUNCATED]...\n" + r.output.substring(r.output.length - 2000);
+                } else if (name === "run_checks" && typeof r.details === "string" && r.details.length > 1000) {
+                   r.details = r.details.substring(0, 1000) + "...[TRUNCATED]";
+                }
+            }
+            
             const ok = isSuccessfulResult(result);
+            
+            if (loopBreaker) {
+                loopBreaker.recordToolExecution(name, ok, ok ? null : JSON.stringify(result).slice(0, 100), ["write_file", "edit_file", "write_files", "delete_file", "append_file"].includes(name));
+            }
+
+            // Cache Set
+            if (ok && ["read_file", "list_files", "web_search", "run_checks"].includes(name)) {
+                globalToolCache.set(name, args, result, name === "web_search" ? 5 * 60 * 1000 : 30 * 1000);
+            }
+            if (ok && ["write_file", "edit_file", "write_files", "delete_file", "append_file"].includes(name)) {
+                const path = (args[0] as any)?.path || (args[0] as any)?.filepath || "";
+                globalToolCache.invalidateFileCaches(path);
+            }
+            
             const okDetail = ok ? undefined : JSON.stringify(result).slice(0, 400);
             onEvent?.({ name, ok, attempt, durationMs: Date.now() - startedAt, detail: okDetail });
             logAudit(name, ok, Date.now() - startedAt, attempt, okDetail);
@@ -505,13 +535,13 @@ export function buildWeaverToolset(
 }
 
 /** نص النظام الكامل — يشاركه مسار الدردشة والعامل الخلفي. */
-export function buildWeaverSystem(activeSkills: string[], mode: string, customPrompt = "") {
+export function buildWeaverSystem(activeSkills: string[], mode: string, customPrompt = "", isComplexBuild = false) {
+  let sys = SYSTEM_PROMPT + MEMORY_RULE;
+  if (mode === "build") {
+    sys += isComplexBuild ? (DESIGN_KIT + DESIGN_LIBRARY + STACK_LIBRARY) : DESIGN_KIT;
+  }
   return (
-    SYSTEM_PROMPT +
-    MEMORY_RULE +
-    DESIGN_KIT +
-    DESIGN_LIBRARY +
-    STACK_LIBRARY +
+    sys +
     skillPrompt(activeSkills) +
     customPrompt +
     modePrompt(mode)
@@ -530,6 +560,7 @@ function statusPrompt(state: LifecycleState, buildIntent: boolean, runtimeReady 
     `ملفات مكتوبة: ${state.hasFiles ? "نعم" : "لا"}`,
     `آخر run_checks ناجح: ${state.checksPassed ? "نعم" : "لا"}`,
     `مراجعة بصرية ناجحة على النسخة الحالية: ${state.designPassed ? "نعم" : "لا"}`,
+    `اختبار جودة تفاعلي E2E ناجح: ${state.e2ePassed ? "نعم" : "لا"}`,
     `منشور: ${state.published ? "نعم" : "لا"}`,
   ];
   if (!runtimeReady) {
@@ -579,7 +610,10 @@ export const Route = createFileRoute("/api/chat")({
           typeof body.model === "string" && /^[\w.-]+\/[\w.:-]+$/.test(body.model.trim())
             ? body.model.trim()
             : null;
-        const modelId = requested ?? getOpenRouterModelId();
+        const complexity = analyzeTaskComplexity(messages as any);
+        const isComplexBuild = complexity === "complex";
+        const modelId = routeModel(requested ?? undefined, messages as any);
+        const loopBreaker = new LoopBreaker(MAX_STEPS);
         const activeSkills = Array.isArray(body.skills)
           ? body.skills.filter((s): s is string => typeof s === "string").slice(0, 12)
           : [];
@@ -596,6 +630,7 @@ export const Route = createFileRoute("/api/chat")({
           hasFiles: false,
           checksPassed: false,
           designPassed: false,
+          e2ePassed: false,
           published: false,
           acted: false,
         };
@@ -769,7 +804,7 @@ export const Route = createFileRoute("/api/chat")({
           const result = streamText({
             model: routed.model,
             system:
-              buildWeaverSystem(activeSkills, mode, customPrompt) +
+              buildWeaverSystem(activeSkills, mode, customPrompt, isComplexBuild) +
               (platformPrompt
                 ? `\n\nتعليمات إضافية من مالك المنصة (إلزامية):\n${platformPrompt}\n`
                 : "") +
@@ -794,13 +829,6 @@ export const Route = createFileRoute("/api/chat")({
                 ...(needs.connectors ? connectorTools(projectId, auth.userId) : {}),
                 ...(needs.platform ? selfTools() : {}),
                 ...(needs.platform ? platformTools(auth) : {}),
-                // شبكة أمان: أي نداء لأداة غير موجودة يُحوَّل إلى هنا بدل إسقاط الجولة.
-                tool_help: tool({
-                  description:
-                    "يعيد قائمة أسماء الأدوات المتاحة في هذه الجولة. استخدمه إذا رُفض نداء أداة.",
-                  inputSchema: z.object({}),
-                  execute: async () => ({ ok: true, note: "استخدم اسماً من هذه القائمة فقط." }),
-                }),
               },
               (name, value) => applyToolResult(lifecycle, name, value),
               undefined,
@@ -808,6 +836,7 @@ export const Route = createFileRoute("/api/chat")({
                 userId: auth.userId,
                 projectId,
               },
+              loopBreaker
             ),
             // بعض النماذج ترسل اسم أداة فارغاً أو غير مطابق — نصحّحه بدل إسقاط الجولة.
             repairToolCall: async ({ toolCall, tools: available }) => {
@@ -818,26 +847,18 @@ export const Route = createFileRoute("/api/chat")({
                 names.find((n) => n.toLowerCase() === raw.toLowerCase()) ??
                 names.find((n) => raw && (n.includes(raw) || raw.includes(n)));
               if (!match) {
-                // لا نخترع أداة عشوائية: نعيد للنموذج قائمة الأسماء الصحيحة ليصحّح نفسه.
-                return { ...toolCall, toolName: "tool_help", input: "{}" };
+                // لا نحوّل الاسم الفارغ إلى أداة تحتاج مُدخلات. قراءة الملفات نقطة استرجاع آمنة.
+                if (names.includes("list_files"))
+                  return { ...toolCall, toolName: "list_files", input: "{}" };
+                if (names.includes("memory_list"))
+                  return { ...toolCall, toolName: "memory_list", input: "{}" };
+                return null;
               }
               if (match === "run_status" && (!toolCall.input || toolCall.input === "{}")) {
                 return { ...toolCall, toolName: match, input: "{}" };
               }
               return { ...toolCall, toolName: match };
             },
-            // بعض نماذج OpenRouter (خصوصاً DeepSeek) قد تطبع ترميز نداء الأداة
-            // كنص خام ثم تُنهي الجولة. إجبار الاختيار ما دام البناء ناقصاً يجعل
-            // المزوّد يعيد tool_call منظّماً يستطيع SDK تنفيذه فعلياً.
-            prepareStep: ({ stepNumber }) => ({
-              // إجبار الأداة مفيد في بداية جولة البناء فقط لمنع الردّ النصّي الوهمي.
-              // إبقاؤه required بعد تنفيذ الأداة كان يمنع النموذج من إنهاء الخطوة
-              // بشكل طبيعي، فيُنتج نداءات فارغة/متكررة ثم يبدو البناء كأنه عالق.
-              toolChoice:
-                stepNumber === 0 && isBuildIncomplete(lifecycle, buildIntent)
-                  ? "required"
-                  : "auto",
-            }),
             stopWhen: [stepCountIs(platform.maxSteps || MAX_STEPS), budgetReached(startedAt)],
             maxOutputTokens: resolveMaxOutputTokens(platform.maxTokens),
 
@@ -920,19 +941,6 @@ export const Route = createFileRoute("/api/chat")({
                 return `النموذج المختار لم يعد متاحاً على OpenRouter${
                   suggested ? ` (البديل المدفوع: ${suggested})` : ""
                 }. اختر نموذجاً آخر من قائمة النماذج أعلى المحادثة ثم أعد الإرسال — سيكمل البناء من آخر حالة محفوظة.`;
-              }
-              // تشخيص واضح بدل رسالة عامة واحدة تخفي السبب الحقيقي.
-              if (/context length|maximum context|too many tokens|context_length/i.test(message)) {
-                return `سياق المحادثة تجاوز حدّ النموذج. ابدأ جولة جديدة في نفس المشروع — الحالة والملفات محفوظة وسيكمل البناء منها.`;
-              }
-              if (/tool_call_id|tool_calls|must be a response to/i.test(message)) {
-                return `تسلسل نداءات الأدوات وصل غير مكتمل إلى المزوّد. أعد الإرسال — سيُعاد بناء السياق من آخر حالة محفوظة.`;
-              }
-              if (/rate limit|429|too many requests/i.test(message)) {
-                return `المزوّد يحدّ من عدد الطلبات الآن (429). انتظر دقيقة ثم أعد الإرسال؛ سيكمل من آخر حالة محفوظة.`;
-              }
-              if (/401|403|invalid api key|unauthorized/i.test(message)) {
-                return `مفتاح OpenRouter مرفوض أو منتهي. حدّثه من الإعدادات ثم أعد الإرسال.`;
               }
               return `انقطعت هذه الجولة بسبب خطأ من المزوّد: ${message}\n\nسيستأنف Weaver التنفيذ تلقائياً من آخر حالة محفوظة.`;
             },

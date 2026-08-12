@@ -15,19 +15,25 @@ import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="max-w-md text-center">
-        <h1 className="text-7xl font-bold text-foreground">404</h1>
-        <h2 className="mt-4 text-xl font-semibold text-foreground">Page not found</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          The page you're looking for doesn't exist or has been moved.
+    <div className="flex min-h-screen items-center justify-center bg-background px-4" dir="rtl">
+      <div className="max-w-lg text-center">
+        {/* Animated 404 SVG */}
+        <div className="relative mx-auto mb-8 size-40">
+          <svg viewBox="0 0 200 200" className="size-full opacity-80">
+            <circle cx="100" cy="100" r="90" fill="none" stroke="oklch(0.75 0.12 250 / 0.15)" strokeWidth="2" strokeDasharray="8 4" className="animate-spin-slow" />
+            <text x="100" y="115" textAnchor="middle" className="fill-primary" fontSize="56" fontWeight="800" fontFamily="var(--font-mono)">404</text>
+          </svg>
+        </div>
+        <h2 className="text-2xl font-extrabold text-foreground">الصفحة غير موجودة</h2>
+        <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
+          الصفحة التي تبحث عنها غير موجودة أو تم نقلها. تأكد من صحة الرابط أو عُد إلى الصفحة الرئيسية.
         </p>
-        <div className="mt-6">
+        <div className="mt-8 flex justify-center gap-3">
           <Link
             to="/"
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-[14px] font-bold text-primary-foreground shadow-[0_0_25px_oklch(0.75_0.12_250/0.3)] transition-all hover:shadow-[0_0_35px_oklch(0.75_0.12_250/0.4)] active:scale-95"
           >
-            Go home
+            الصفحة الرئيسية
           </Link>
         </div>
       </div>
@@ -43,29 +49,32 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   }, [error]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="max-w-md text-center">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          This page didn't load
+    <div className="flex min-h-screen items-center justify-center bg-background px-4" dir="rtl">
+      <div className="max-w-lg text-center">
+        <div className="mx-auto mb-6 grid size-16 place-items-center rounded-2xl bg-destructive/10 text-destructive">
+          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </div>
+        <h1 className="text-2xl font-extrabold text-foreground">
+          حدث خطأ غير متوقع
         </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Something went wrong on our end. You can try refreshing or head back home.
+        <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
+          نعتذر عن هذا الخطأ. يمكنك إعادة المحاولة أو العودة إلى الصفحة الرئيسية.
         </p>
-        <div className="mt-6 flex flex-wrap justify-center gap-2">
+        <div className="mt-8 flex flex-wrap justify-center gap-3">
           <button
             onClick={() => {
               router.invalidate();
               reset();
             }}
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-[14px] font-bold text-primary-foreground shadow-[0_0_25px_oklch(0.75_0.12_250/0.3)] transition-all hover:shadow-[0_0_35px_oklch(0.75_0.12_250/0.4)] active:scale-95"
           >
-            Try again
+            إعادة المحاولة
           </button>
           <a
             href="/"
-            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+            className="inline-flex items-center rounded-xl border bg-card px-6 py-3 text-[14px] font-semibold transition-colors hover:bg-surface"
           >
-            Go home
+            الصفحة الرئيسية
           </a>
         </div>
       </div>

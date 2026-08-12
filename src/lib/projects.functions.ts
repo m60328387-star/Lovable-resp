@@ -41,28 +41,32 @@ export const createProject = createServerFn({ method: "POST" })
   .middleware([requireWeaverAuth])
   .inputValidator((input: unknown) => z.object({ title: z.string().min(1).max(120) }).parse(input))
   .handler(async ({ data, context }) => {
-    await ensureProfile(context.userId, context.owner.email);
-    const sql = getSql();
-    const [row] = await sql`
-      INSERT INTO public.projects (user_id, title, build_state)
-      VALUES (
-        ${context.userId},
-        ${data.title},
-        ${sql.json({ phase: "intake", completedSteps: [], updatedAt: new Date().toISOString() } as never)}
-      )
-      RETURNING id, title, status, build_progress, next_action, deployed_url, updated_at
-    `;
-    return row as unknown as {
-      id: string;
-      title: string;
-      status: string;
-      build_progress: number;
-      next_action: string | null;
-      deployed_url: string | null;
-      updated_at: string;
-    };
+    try {
+      await ensureProfile(context.userId, context.owner.email);
+      const sql = getSql();
+      const [row] = await sql`
+        INSERT INTO public.projects (user_id, title, build_state)
+        VALUES (
+          ${context.userId},
+          ${data.title},
+          ${sql.json({ phase: "intake", completedSteps: [], updatedAt: new Date().toISOString() } as never)}
+        )
+        RETURNING id, title, status, build_progress, next_action, deployed_url, updated_at
+      `;
+      return row as unknown as {
+        id: string;
+        title: string;
+        status: string;
+        build_progress: number;
+        next_action: string | null;
+        deployed_url: string | null;
+        updated_at: string;
+      };
+    } catch (error) {
+      console.error("[CREATE_PROJECT_ERROR]", error);
+      throw error;
+    }
   });
-
 export const renameProject = createServerFn({ method: "POST" })
   .middleware([requireWeaverAuth])
   .inputValidator((input: unknown) =>

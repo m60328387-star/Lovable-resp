@@ -1,0 +1,116 @@
+weaver-runtime  | [runtime] يعمل على المنفذ 4100 — مساحات العمل في /workspaces
+weaver-worker   | [worker] started → http://app:3000 (lanes: 1)
+weaver-worker   | [worker:message-integrity] {"ok":true,"duplicatePositions":0,"duplicateIds":0,"removed":0,"checkedAt":"2026-08-11T21:05:32.104Z"}
+weaver-db       | 
+weaver-db       | PostgreSQL Database directory appears to contain a database; Skipping initialization
+weaver-db       | 
+weaver-db       | 2026-08-11 21:05:15.716 UTC [1] LOG:  starting PostgreSQL 17.10 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+weaver-backup   | [backup] بدء خدمة النسخ الاحتياطي (كل 86400s، الاحتفاظ 14 يوماً)
+weaver-backup   | [backup] تم: /backups/weaver-20260811-210523.sql.gz (10874923 بايت)
+weaver-nginx    | No WEAVER_DOMAIN set - running HTTP-only (IP access).
+weaver-db       | 2026-08-11 21:05:15.720 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+weaver-db       | 2026-08-11 21:05:15.721 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+weaver-db       | 2026-08-11 21:05:15.728 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+weaver-db       | 2026-08-11 21:05:15.761 UTC [28] LOG:  database system was shut down at 2026-08-11 21:03:56 UTC
+weaver-db       | 2026-08-11 21:05:15.824 UTC [1] LOG:  database system is ready to accept connections
+weaver-db       | 2026-08-11 21:10:15.812 UTC [26] LOG:  checkpoint starting: time
+weaver-app      | }
+weaver-app      | {
+weaver-app      |   severity_local: 'NOTICE',
+weaver-app      |   severity: 'NOTICE',
+weaver-app      |   code: '42P07',
+weaver-app      |   message: 'relation "platform_changes_status_idx" already exists, skipping',
+weaver-app      |   file: 'index.c',
+weaver-app      |   line: '889',
+weaver-app      |   routine: 'index_create'
+weaver-app      | }
+weaver-app      | {
+weaver-app      |   severity_local: 'NOTICE',
+weaver-app      |   severity: 'NOTICE',
+weaver-app      |   code: '42P07',
+weaver-app      |   message: 'relation "platform_settings" already exists, skipping',
+weaver-app      |   file: 'parse_utilcmd.c',
+weaver-app      |   line: '207',
+weaver-app      |   routine: 'transformCreateStmt'
+weaver-app      | }
+weaver-app      | {
+weaver-app      |   severity_local: 'NOTICE',
+weaver-app      |   severity: 'NOTICE',
+weaver-app      |   code: '42P07',
+weaver-app      |   message: 'relation "prompt_versions" already exists, skipping',
+weaver-app      |   file: 'parse_utilcmd.c',
+weaver-app      |   line: '207',
+weaver-app      |   routine: 'transformCreateStmt'
+weaver-app      | }
+weaver-app      | {
+weaver-app      |   severity_local: 'NOTICE',
+weaver-app      |   severity: 'NOTICE',
+weaver-app      |   code: '42P07',
+weaver-app      |   message: 'relation "platform_deploys" already exists, skipping',
+weaver-app      |   file: 'parse_utilcmd.c',
+weaver-app      |   line: '207',
+weaver-app      |   routine: 'transformCreateStmt'
+weaver-app      | }
+weaver-app      | {
+weaver-app      |   severity_local: 'NOTICE',
+weaver-app      |   severity: 'NOTICE',
+weaver-app      |   code: '42701',
+weaver-app      |   message: 'column "external_job_id" of relation "platform_deploys" already exists, skipping',
+weaver-app      |   file: 'tablecmds.c',
+weaver-app      |   line: '7471',
+weaver-app      |   routine: 'check_for_column_name_collision'
+weaver-app      | }
+weaver-app      | {
+weaver-app      |   severity_local: 'NOTICE',
+weaver-app      |   severity: 'NOTICE',
+weaver-app      |   code: '42701',
+weaver-app      |   message: 'column "ref" of relation "platform_deploys" already exists, skipping',
+weaver-app      |   file: 'tablecmds.c',
+weaver-app      |   line: '7471',
+weaver-app      |   routine: 'check_for_column_name_collision'
+weaver-app      | }
+weaver-app      | {
+weaver-app      |   severity_local: 'NOTICE',
+weaver-app      |   severity: 'NOTICE',
+weaver-app      |   code: '42P07',
+weaver-app      |   message: 'relation "knowledge_entries_dedupe" already exists, skipping',
+weaver-app      |   file: 'index.c',
+weaver-app      |   line: '889',
+weaver-app      |   routine: 'index_create'
+weaver-app      | }
+weaver-app      | {
+weaver-app      |   severity_local: 'NOTICE',
+weaver-app      |   severity: 'NOTICE',
+weaver-app      |   code: '42P07',
+weaver-app      |   message: 'relation "knowledge_entries_user_recent" already exists, skipping',
+weaver-app      |   file: 'index.c',
+weaver-app      |   line: '889',
+weaver-app      |   routine: 'index_create'
+weaver-app      | }
+weaver-app      | {
+weaver-app      |   severity_local: 'NOTICE',
+weaver-app      |   severity: 'NOTICE',
+weaver-app      |   code: '42701',
+weaver-app      |   message: 'column "external_job_id" of relation "platform_deploys" already exists, skipping',
+weaver-app      |   file: 'tablecmds.c',
+weaver-app      |   line: '7471',
+weaver-app      |   routine: 'check_for_column_name_collision'
+weaver-app      | }
+weaver-app      | {
+weaver-app      |   severity_local: 'NOTICE',
+weaver-app      |   severity: 'NOTICE',
+weaver-app      |   code: '42701',
+weaver-app      |   message: 'column "ref" of relation "platform_deploys" already exists, skipping',
+weaver-app      |   file: 'tablecmds.c',
+weaver-app      |   line: '7471',
+weaver-app      |   routine: 'check_for_column_name_collision'
+weaver-app      | }
+weaver-app      | {
+weaver-app      |   severity_local: 'NOTICE',
+weaver-app      |   severity: 'NOTICE',
+weaver-app      |   code: '42P07',
+weaver-app      |   message: 'relation "knowledge_entries_tags" already exists, skipping',
+weaver-app      |   file: 'index.c',
+weaver-app      |   line: '889',
+weaver-app      |   routine: 'index_create'
+weaver-app      | }

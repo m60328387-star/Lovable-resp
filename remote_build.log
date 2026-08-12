@@ -1,0 +1,50 @@
+#15 14.97 
+#15 14.97 [31m[builtin:vite-transform] [0mUnterminated string
+#15 14.97     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m src/lib/agent/system-prompt.ts:10:30 [38;5;246m][0m
+#15 14.97     [38;5;246m│[0m
+#15 14.97  [38;5;246m10 │[0m ╭─▶ [38;5;249me[0m[38;5;249mx[0m[38;5;249mp[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mS[0m[38;5;249mY[0m[38;5;249mS[0m[38;5;249mT[0m[38;5;249mE[0m[38;5;249mM[0m[38;5;249m_[0m[38;5;249mP[0m[38;5;249mR[0m[38;5;249mO[0m[38;5;249mM[0m[38;5;249mP[0m[38;5;249mT[0m[38;5;249m [0m[38;5;249m=[0m[38;5;249m [0m`أنت "Weaver" — وكيل هندسي احترافي يعمل بدورة عمل متكاملة لإنشاء وتطوير المشاريع بتميز بصري وتقني، ولست مجرد مولد نصوص.
+#15 14.97  [38;5;240m   ┆[0m ┆   
+#15 14.97  [38;5;246m86 │[0m ├─▶ \`;
+#15 14.97  [38;5;240m   │[0m │         
+#15 14.97  [38;5;240m   │[0m ╰───────── 
+#15 14.97 [38;5;246m────╯[0m
+#15 14.97 
+#15 14.97     at aggregateBindingErrorsIntoJsError (/app/node_modules/rolldown/dist/shared/error-DFGNOCle.mjs:48:22)
+#15 14.97     at unwrapBindingResult (/app/node_modules/rolldown/dist/shared/error-DFGNOCle.mjs:18:128)
+#15 14.97     at #build (/app/node_modules/rolldown/dist/shared/rolldown-build-CdF8HAHX.mjs:3276:34)
+#15 14.97     at processTicksAndRejections (native:7:39) {
+#15 14.97   errors: [Getter/Setter]
+#15 14.97 }
+#15 15.14 error: script "build" exited with code 1
+#15 ERROR: process "/bin/sh -c bun run build" did not complete successfully: exit code: 1
+------
+ > [builder 6/6] RUN bun run build:
+14.97  [38;5;240m   │[0m ╰───────── 
+14.97 [38;5;246m────╯[0m
+14.97 
+14.97     at aggregateBindingErrorsIntoJsError (/app/node_modules/rolldown/dist/shared/error-DFGNOCle.mjs:48:22)
+14.97     at unwrapBindingResult (/app/node_modules/rolldown/dist/shared/error-DFGNOCle.mjs:18:128)
+14.97     at #build (/app/node_modules/rolldown/dist/shared/rolldown-build-CdF8HAHX.mjs:3276:34)
+14.97     at processTicksAndRejections (native:7:39) {
+14.97   errors: [Getter/Setter]
+14.97 }
+15.14 error: script "build" exited with code 1
+------
+Dockerfile:17
+
+--------------------
+
+  15 |     ENV WEAVER_BUILD_TARGET=node
+
+  16 |     ENV NODE_ENV=production
+
+  17 | >>> RUN bun run build
+
+  18 |     
+
+  19 |     # Nitro node-server emits the production server under .output/
+
+--------------------
+
+failed to solve: process "/bin/sh -c bun run build" did not complete successfully: exit code: 1
+
